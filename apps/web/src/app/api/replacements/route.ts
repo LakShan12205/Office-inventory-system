@@ -1,6 +1,6 @@
-import { inventoryRepository } from "../../../../../api/src/modules/shared/inventory.repository";
+import { listReplacements } from "../_lib/mock-data";
 import { handleRoute } from "../_lib/route-utils";
 
 export async function GET() {
-  return handleRoute(() => inventoryRepository.listReplacements());
+  return handleRoute(async () => listReplacements());
 }

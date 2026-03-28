@@ -1,5 +1,4 @@
-import { inventoryRepository } from "../../../../../../../api/src/modules/shared/inventory.repository";
-import { workstationAssignmentPayloadSchema } from "../../../../../../../api/src/modules/shared/inventory.schemas";
+import { createWorkstationAssignment } from "../../../_lib/mock-data";
 import { handleRoute } from "../../../_lib/route-utils";
 
 export async function POST(
@@ -8,7 +7,18 @@ export async function POST(
 ) {
   return handleRoute(async () => {
     const { id } = await context.params;
-    const payload = workstationAssignmentPayloadSchema.parse(await request.json());
-    return inventoryRepository.createWorkstationAssignment(id, payload);
+    const body = (await request.json()) as {
+      assetId: string;
+      assignmentType?: "PRIMARY" | "TEMPORARY_REPLACEMENT" | "SPARE";
+      assignedDate?: string;
+      notes?: string | null;
+    };
+
+    return createWorkstationAssignment(id, {
+      assetId: body.assetId,
+      assignmentType: body.assignmentType ?? "PRIMARY",
+      assignedDate: body.assignedDate,
+      notes: body.notes ?? null
+    });
   });
 }

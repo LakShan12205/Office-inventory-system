@@ -1,6 +1,6 @@
-import { inventoryRepository } from "../../../../../api/src/modules/shared/inventory.repository";
+import { getDashboardData } from "../_lib/mock-data";
 import { handleRoute } from "../_lib/route-utils";
 
 export async function GET() {
-  return handleRoute(() => inventoryRepository.getDashboardData());
+  return handleRoute(async () => getDashboardData());
 }
