@@ -1,24 +1,24 @@
 import { cache } from "react";
 
 function getApiBaseUrl() {
+  // browser side
   if (typeof window !== "undefined") {
-    return process.env.NEXT_PUBLIC_API_URL || "/api";
+    return "/api";
   }
 
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL;
-  }
-
+  // server side (Vercel)
   if (process.env.VERCEL_URL) {
     return `https://${process.env.VERCEL_URL}/api`;
   }
 
+  // local dev
   return "http://localhost:3000/api";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const apiBaseUrl = getApiBaseUrl();
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const baseUrl = getApiBaseUrl();
+
+  const response = await fetch(`${baseUrl}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
