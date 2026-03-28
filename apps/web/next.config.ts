@@ -1,6 +1,8 @@
 const nextConfig = {
-  reactStrictMode: true
+  reactStrictMode: true,
+  experimental: {
+    externalDir: true
+  }
 };
 
 export default nextConfig;
-

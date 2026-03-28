@@ -1,5 +1,5 @@
 import createError from "http-errors";
-import { prisma } from "../../db/prisma.js";
+import { prisma } from "../../db/prisma";
 
 const workstationInclude = {
   assets: {
