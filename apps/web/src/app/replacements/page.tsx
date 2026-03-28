@@ -2,10 +2,28 @@ import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getReplacements } from "@/lib/api";
-import { ReplacementRecord } from "@/lib/types";
+
+type ReplacementPageRecord = {
+  id: string;
+  status: string;
+  replacementDate: string;
+  replacementReturnDate?: string | null;
+  originalAsset: {
+    id: string;
+    assetCode: string;
+  };
+  replacementAsset: {
+    id: string;
+    assetCode: string;
+  };
+  workstation: {
+    id: string;
+    code: string;
+  };
+};
 
 export default async function ReplacementsPage() {
-  const replacements = (await getReplacements()) as ReplacementRecord[];
+  const replacements = (await getReplacements()) as ReplacementPageRecord[];
 
   return (
     <div className="space-y-5">
@@ -16,13 +34,22 @@ export default async function ReplacementsPage() {
 
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
         <DataTable
-          headers={["Workstation", "Original machine", "Replacement", "Replacement date", "Status", "Original return"]}
+          headers={[
+            "Workstation",
+            "Original machine",
+            "Replacement",
+            "Replacement date",
+            "Status",
+            "Original return"
+          ]}
         >
           {replacements.map((replacement) => (
             <tr key={replacement.id}>
               <td className="px-4 py-4 text-sm">{replacement.workstation.code}</td>
               <td className="px-4 py-4 text-sm">{replacement.originalAsset.assetCode}</td>
-              <td className="px-4 py-4 text-sm font-medium">{replacement.replacementAsset.assetCode}</td>
+              <td className="px-4 py-4 text-sm font-medium">
+                {replacement.replacementAsset.assetCode}
+              </td>
               <td className="px-4 py-4 text-sm">
                 {new Date(replacement.replacementDate).toLocaleDateString()}
               </td>
@@ -30,8 +57,8 @@ export default async function ReplacementsPage() {
                 <StatusBadge value={replacement.status} />
               </td>
               <td className="px-4 py-4 text-sm">
-                {replacement.repair.actualReturnDate
-                  ? new Date(replacement.repair.actualReturnDate).toLocaleDateString()
+                {replacement.replacementReturnDate
+                  ? new Date(replacement.replacementReturnDate).toLocaleDateString()
                   : "Still away"}
               </td>
             </tr>

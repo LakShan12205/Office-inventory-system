@@ -4,7 +4,30 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAssets } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
-import { AssetRecord } from "@/lib/types";
+
+type AssetPageRecord = {
+  id: string;
+  assetCode: string;
+  brand: string;
+  model: string;
+  serialNumber?: string | null;
+  status: string;
+  currentLocation?: string | null;
+  assetType: {
+    id: string;
+    name: string;
+  };
+  workstation?: {
+    id: string;
+    code: string;
+  } | null;
+  workstationAssignments?: Array<{
+    workstation: {
+      id: string;
+      code: string;
+    };
+  }>;
+};
 
 export default async function AssetsPage({
   searchParams
@@ -18,7 +41,9 @@ export default async function AssetsPage({
   appendQueryParam(query, "type", params?.type);
   appendQueryParam(query, "status", params?.status);
 
-  const assets = (await getAssets(query.toString() ? `?${query.toString()}` : "")) as AssetRecord[];
+  const assets = (await getAssets(
+    query.toString() ? `?${query.toString()}` : ""
+  )) as AssetPageRecord[];
 
   return (
     <div className="space-y-5">
@@ -72,26 +97,32 @@ export default async function AssetsPage({
         <DataTable
           headers={["Asset code", "Type", "Brand / Model", "Serial number", "Status", "Current location"]}
         >
-          {assets.map((asset) => (
-            <tr key={asset.id}>
-              <td className="px-4 py-4 text-sm font-medium">
-                <Link href={`/assets/${asset.id}`} className="text-[var(--nav)] hover:text-[var(--accent)]">
-                  {asset.assetCode}
-                </Link>
-              </td>
-              <td className="px-4 py-4 text-sm">{asset.assetType.name}</td>
-              <td className="px-4 py-4 text-sm text-[var(--muted)]">
-                {asset.brand} {asset.model}
-              </td>
-              <td className="px-4 py-4 text-sm">{asset.serialNumber}</td>
-              <td className="px-4 py-4 text-sm">
-                <StatusBadge value={asset.status} />
-              </td>
-              <td className="px-4 py-4 text-sm">
-                {asset.workstationAssignments[0]?.workstation.code || asset.currentLocation || "Store"}
-              </td>
-            </tr>
-          ))}
+          {assets.map((asset) => {
+            const workstationCode =
+              asset.workstationAssignments?.[0]?.workstation.code ||
+              asset.workstation?.code ||
+              asset.currentLocation ||
+              "Store";
+
+            return (
+              <tr key={asset.id}>
+                <td className="px-4 py-4 text-sm font-medium">
+                  <Link href={`/assets/${asset.id}`} className="text-[var(--nav)] hover:text-[var(--accent)]">
+                    {asset.assetCode}
+                  </Link>
+                </td>
+                <td className="px-4 py-4 text-sm">{asset.assetType.name}</td>
+                <td className="px-4 py-4 text-sm text-[var(--muted)]">
+                  {asset.brand} {asset.model}
+                </td>
+                <td className="px-4 py-4 text-sm">{asset.serialNumber || "-"}</td>
+                <td className="px-4 py-4 text-sm">
+                  <StatusBadge value={asset.status} />
+                </td>
+                <td className="px-4 py-4 text-sm">{workstationCode}</td>
+              </tr>
+            );
+          })}
         </DataTable>
       </div>
     </div>

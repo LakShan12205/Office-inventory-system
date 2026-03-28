@@ -4,7 +4,29 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getWorkstations } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
-import { WorkstationListItem } from "@/lib/types";
+
+type WorkstationPageItem = {
+  id: string;
+  code: string;
+  name?: string;
+  location: string;
+  status: string;
+  assets?: Array<{
+    id: string;
+    asset: {
+      id: string;
+      assetCode: string;
+      assetType: { name: string };
+    };
+    assignmentType: string;
+  }>;
+  _count?: {
+    assets?: number;
+    repairs?: number;
+  };
+  assetCount?: number;
+  machineCount?: number;
+};
 
 export default async function WorkstationsPage({
   searchParams
@@ -17,7 +39,9 @@ export default async function WorkstationsPage({
   appendQueryParam(query, "search", params?.search);
   appendQueryParam(query, "status", params?.status);
 
-  const workstations = (await getWorkstations(query.toString() ? `?${query.toString()}` : "")) as WorkstationListItem[];
+  const workstations = (await getWorkstations(
+    query.toString() ? `?${query.toString()}` : ""
+  )) as WorkstationPageItem[];
 
   return (
     <div className="space-y-5">
@@ -53,10 +77,19 @@ export default async function WorkstationsPage({
 
       <div className="grid gap-4 xl:grid-cols-2">
         {workstations.map((workstation) => {
-          const machineCount = workstation.assets.filter((item) => item.asset.assetType.name === "Machine").length;
-          const activeReplacement = workstation.assets.find(
-            (item) => item.assignmentType === "TEMPORARY_REPLACEMENT"
+          const assets = workstation.assets ?? [];
+          const machineCount =
+            workstation.machineCount ??
+            assets.filter((item) => item.asset.assetType.name === "Machine").length;
+
+          const activeReplacement = assets.find(
+            (item) =>
+              item.assignmentType === "TEMPORARY_REPLACEMENT" ||
+              item.assignmentType === "Temporary Replacement"
           );
+
+          const assetCount = workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+          const repairCount = workstation._count?.repairs ?? 0;
 
           return (
             <Link
@@ -66,8 +99,12 @@ export default async function WorkstationsPage({
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">{workstation.code}</p>
-                  <h2 className="mt-2 text-xl font-semibold">{workstation.name}</h2>
+                  <p className="text-xs uppercase tracking-[0.25em] text-[var(--muted)]">
+                    {workstation.code}
+                  </p>
+                  <h2 className="mt-2 text-xl font-semibold">
+                    {workstation.name ?? workstation.code}
+                  </h2>
                   <p className="mt-2 text-sm text-[var(--muted)]">{workstation.location}</p>
                 </div>
                 <StatusBadge value={workstation.status} />
@@ -75,19 +112,29 @@ export default async function WorkstationsPage({
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl bg-[var(--panel-strong)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Assigned assets</p>
-                  <p className="mt-2 text-2xl font-semibold">{workstation._count.assets}</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
+                    Assigned assets
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold">{assetCount}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel-strong)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Machines</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
+                    Machines
+                  </p>
                   <p className="mt-2 text-2xl font-semibold">{machineCount}</p>
                 </div>
                 <div className="rounded-2xl bg-[var(--panel-strong)] px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">Replacement</p>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[var(--muted)]">
+                    Replacement
+                  </p>
                   <p className="mt-2 text-sm font-semibold">
                     {activeReplacement ? activeReplacement.asset.assetCode : "None active"}
                   </p>
                 </div>
+              </div>
+
+              <div className="mt-4 text-xs text-[var(--muted)]">
+                Open repairs: {repairCount}
               </div>
             </Link>
           );
@@ -97,11 +144,21 @@ export default async function WorkstationsPage({
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
         <DataTable headers={["Code", "Location", "Status", "Assets", "Machines", "Open Repairs"]}>
           {workstations.map((workstation) => {
-            const machineCount = workstation.assets.filter((item) => item.asset.assetType.name === "Machine").length;
+            const assets = workstation.assets ?? [];
+            const machineCount =
+              workstation.machineCount ??
+              assets.filter((item) => item.asset.assetType.name === "Machine").length;
+
+            const assetCount = workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+            const repairCount = workstation._count?.repairs ?? 0;
+
             return (
               <tr key={workstation.id}>
                 <td className="px-4 py-4 text-sm font-medium">
-                  <Link href={`/workstations/${workstation.id}`} className="text-[var(--nav)] hover:text-[var(--accent)]">
+                  <Link
+                    href={`/workstations/${workstation.id}`}
+                    className="text-[var(--nav)] hover:text-[var(--accent)]"
+                  >
                     {workstation.code}
                   </Link>
                 </td>
@@ -109,9 +166,9 @@ export default async function WorkstationsPage({
                 <td className="px-4 py-4 text-sm">
                   <StatusBadge value={workstation.status} />
                 </td>
-                <td className="px-4 py-4 text-sm">{workstation._count.assets}</td>
+                <td className="px-4 py-4 text-sm">{assetCount}</td>
                 <td className="px-4 py-4 text-sm">{machineCount}</td>
-                <td className="px-4 py-4 text-sm">{workstation._count.repairs}</td>
+                <td className="px-4 py-4 text-sm">{repairCount}</td>
               </tr>
             );
           })}

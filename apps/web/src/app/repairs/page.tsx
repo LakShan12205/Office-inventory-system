@@ -4,7 +4,28 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getRepairs } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
-import { RepairRecord } from "@/lib/types";
+
+type RepairPageRecord = {
+  id: string;
+  reportedDate: string;
+  faultDescription: string;
+  status: string;
+  expectedReturnDate?: string | null;
+  asset: {
+    id: string;
+    assetCode: string;
+  };
+  workstation: {
+    id: string;
+    code: string;
+  };
+  replacementLog?: {
+    replacementAsset: {
+      id: string;
+      assetCode: string;
+    };
+  } | null;
+};
 
 export default async function RepairsPage({
   searchParams
@@ -16,7 +37,9 @@ export default async function RepairsPage({
 
   appendQueryParam(query, "status", params?.status);
 
-  const repairs = (await getRepairs(query.toString() ? `?${query.toString()}` : "")) as RepairRecord[];
+  const repairs = (await getRepairs(
+    query.toString() ? `?${query.toString()}` : ""
+  )) as RepairPageRecord[];
 
   return (
     <div className="space-y-5">
@@ -55,22 +78,38 @@ export default async function RepairsPage({
 
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
         <DataTable
-          headers={["Machine", "Workstation", "Reported", "Fault", "Repair status", "Expected return", "Replacement"]}
+          headers={[
+            "Machine",
+            "Workstation",
+            "Reported",
+            "Fault",
+            "Repair status",
+            "Expected return",
+            "Replacement"
+          ]}
         >
           {repairs.map((repair) => (
             <tr key={repair.id}>
               <td className="px-4 py-4 text-sm font-medium">{repair.asset.assetCode}</td>
               <td className="px-4 py-4 text-sm">{repair.workstation.code}</td>
-              <td className="px-4 py-4 text-sm">{new Date(repair.reportedDate).toLocaleDateString()}</td>
-              <td className="px-4 py-4 text-sm text-[var(--muted)]">{repair.faultDescription}</td>
+              <td className="px-4 py-4 text-sm">
+                {new Date(repair.reportedDate).toLocaleDateString()}
+              </td>
+              <td className="px-4 py-4 text-sm text-[var(--muted)]">
+                {repair.faultDescription}
+              </td>
               <td className="px-4 py-4 text-sm">
                 <StatusBadge value={repair.status} />
               </td>
               <td className="px-4 py-4 text-sm">
-                {repair.expectedReturnDate ? new Date(repair.expectedReturnDate).toLocaleDateString() : "Not set"}
+                {repair.expectedReturnDate
+                  ? new Date(repair.expectedReturnDate).toLocaleDateString()
+                  : "Not set"}
               </td>
               <td className="px-4 py-4 text-sm">
-                {repair.replacementLog ? repair.replacementLog.replacementAsset.assetCode : "None"}
+                {repair.replacementLog
+                  ? repair.replacementLog.replacementAsset.assetCode
+                  : "None"}
               </td>
             </tr>
           ))}
