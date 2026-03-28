@@ -1,0 +1,222 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkstationStatus {
+  ACTIVE
+  NEEDS_ATTENTION
+  UNDER_MAINTENANCE
+  INACTIVE
+}
+
+enum AssetStatus {
+  ACTIVE
+  IN_REPAIR
+  IN_STORE
+  TEMPORARY_REPLACEMENT
+  DAMAGED
+  RETIRED
+}
+
+enum AssignmentType {
+  PRIMARY
+  TEMPORARY_REPLACEMENT
+  SPARE
+}
+
+enum RepairType {
+  ON_SITE
+  SENT_TO_SHOP
+}
+
+enum RepairStatus {
+  REPORTED
+  SENT
+  IN_PROGRESS
+  RETURNED
+  CLOSED
+}
+
+enum ReplacementStatus {
+  ACTIVE
+  REMOVED
+  PENDING_RESTORE
+}
+
+enum AlertStatus {
+  NEW
+  READ
+  RESOLVED
+}
+
+enum AlertPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum AlertType {
+  MACHINE_SENT_FOR_REPAIR
+  REPAIR_OVERDUE
+  REPLACEMENT_ACTIVE
+  ORIGINAL_RETURNED
+  REPLACEMENT_NOT_REMOVED
+  INCOMPLETE_REPAIR_RECORD
+  REPEATED_REPAIR
+}
+
+model Workstation {
+  id                 String             @id @default(cuid())
+  code               String             @unique
+  name               String
+  location           String
+  status             WorkstationStatus  @default(ACTIVE)
+  notes              String?
+  assets             WorkstationAsset[]
+  repairs            Repair[]
+  replacementLogs    ReplacementLog[]
+  alerts             Alert[]
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  @@index([status])
+  @@index([location])
+}
+
+model AssetType {
+  id             String   @id @default(cuid())
+  code           String   @unique
+  name           String   @unique
+  description    String?
+  trackIndividually Boolean @default(true)
+  assets         Asset[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Asset {
+  id                    String             @id @default(cuid())
+  assetCode             String             @unique
+  assetTypeId           String
+  assetType             AssetType          @relation(fields: [assetTypeId], references: [id])
+  brand                 String
+  model                 String
+  serialNumber          String             @unique
+  specification         String?
+  purchaseDate          DateTime?
+  status                AssetStatus        @default(IN_STORE)
+  currentLocation       String?
+  notes                 String?
+  workstationAssignments WorkstationAsset[]
+  repairs               Repair[]
+  originalReplacementLogs ReplacementLog[] @relation("OriginalAsset")
+  replacementLogs       ReplacementLog[]   @relation("ReplacementAsset")
+  alerts                Alert[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  deletedAt             DateTime?
+
+  @@index([status])
+  @@index([assetTypeId, status])
+}
+
+model WorkstationAsset {
+  id              String         @id @default(cuid())
+  workstationId   String
+  assetId         String
+  workstation     Workstation    @relation(fields: [workstationId], references: [id])
+  asset           Asset          @relation(fields: [assetId], references: [id])
+  assignmentType  AssignmentType @default(PRIMARY)
+  assignedDate    DateTime       @default(now())
+  unassignedDate  DateTime?
+  isActive        Boolean        @default(true)
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([workstationId, isActive])
+  @@index([assetId, isActive])
+}
+
+model Repair {
+  id                  String       @id @default(cuid())
+  workstationId       String
+  assetId             String
+  workstation         Workstation  @relation(fields: [workstationId], references: [id])
+  asset               Asset        @relation(fields: [assetId], references: [id])
+  reportedDate        DateTime
+  faultDescription    String
+  sentTo              String?
+  repairType          RepairType
+  sentDate            DateTime?
+  expectedReturnDate  DateTime?
+  actualReturnDate    DateTime?
+  diagnosis           String?
+  repairAction        String?
+  partsChanged        String?
+  cost                Decimal?     @db.Decimal(10, 2)
+  handledBy           String?
+  notes               String?
+  status              RepairStatus @default(REPORTED)
+  replacementLog      ReplacementLog?
+  alerts              Alert[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  deletedAt           DateTime?
+
+  @@index([assetId, status])
+  @@index([workstationId, status])
+  @@index([expectedReturnDate, actualReturnDate])
+}
+
+model ReplacementLog {
+  id                    String            @id @default(cuid())
+  repairId              String            @unique
+  originalAssetId       String
+  replacementAssetId    String
+  workstationId         String
+  repair                Repair            @relation(fields: [repairId], references: [id])
+  originalAsset         Asset             @relation("OriginalAsset", fields: [originalAssetId], references: [id])
+  replacementAsset      Asset             @relation("ReplacementAsset", fields: [replacementAssetId], references: [id])
+  workstation           Workstation       @relation(fields: [workstationId], references: [id])
+  replacementDate       DateTime
+  replacementReturnDate DateTime?
+  status                ReplacementStatus @default(ACTIVE)
+  notes                 String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+
+  @@index([workstationId, status])
+  @@index([originalAssetId, status])
+  @@index([replacementAssetId, status])
+}
+
+model Alert {
+  id             String        @id @default(cuid())
+  workstationId  String?
+  assetId        String?
+  repairId       String?
+  workstation    Workstation?  @relation(fields: [workstationId], references: [id])
+  asset          Asset?        @relation(fields: [assetId], references: [id])
+  repair         Repair?       @relation(fields: [repairId], references: [id])
+  alertType      AlertType
+  message        String
+  alertDate      DateTime      @default(now())
+  status         AlertStatus   @default(NEW)
+  priority       AlertPriority @default(MEDIUM)
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  resolvedAt     DateTime?
+
+  @@index([status, priority])
+  @@index([alertType, alertDate])
+  @@index([workstationId, status])
+  @@index([assetId, status])
+}
