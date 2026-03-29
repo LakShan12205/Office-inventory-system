@@ -1,7 +1,21 @@
 import { cache } from "react";
 
 function getApiBaseUrl() {
-  return "/api";
+  // Browser side
+  if (typeof window !== "undefined") {
+    return "/api";
+  }
+
+  // Server side
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    return `${process.env.NEXT_PUBLIC_SITE_URL}/api`;
+  }
+
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}/api`;
+  }
+
+  return "http://localhost:3000/api";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -36,8 +50,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
     throw new Error(
       data?.error?.message ||
-      data?.message ||
-      `Request failed with status ${response.status}`
+        data?.message ||
+        `Request failed with status ${response.status}`
     );
   }
 
@@ -68,7 +82,10 @@ export async function createAsset(payload: unknown) {
   });
 }
 
-export async function createWorkstationAssignment(workstationId: string, payload: unknown) {
+export async function createWorkstationAssignment(
+  workstationId: string,
+  payload: unknown
+) {
   return request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
     body: JSON.stringify(payload)
