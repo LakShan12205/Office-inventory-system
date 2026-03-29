@@ -1,23 +1,34 @@
 import { cache } from "react";
+import { headers } from "next/headers";
 
-function getApiBaseUrl() {
-  // Use relative API path for both browser and server
-  // This avoids Vercel URL issues in many Next.js app-router setups
-  return "/api";
+async function getApiBaseUrl() {
+  if (typeof window !== "undefined") {
+    return "/api";
+  }
+
+  const h = await headers();
+  const host = h.get("host");
+
+  if (!host) {
+    return "http://localhost:3000/api";
+  }
+
+  const protocol = host.includes("localhost") ? "http" : "https";
+  return `${protocol}://${host}/api`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = getApiBaseUrl();
+  const baseUrl = await getApiBaseUrl();
   const url = `${baseUrl}${path}`;
 
   try {
     const response = await fetch(url, {
       ...init,
       headers: {
-        "Content-Type": "application/json",
         ...(init?.headers ?? {})
       },
-      cache: "no-store"
+      cache: "no-store",
+      next: { revalidate: 0 }
     });
 
     const rawText = await response.text();
@@ -98,14 +109,20 @@ export const getReplacements = cache(async () => {
 export async function createRepair(payload: unknown) {
   return await request("/repairs", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json"
+    }
   });
 }
 
 export async function createAsset(payload: unknown) {
   return await request("/assets", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json"
+    }
   });
 }
 
@@ -115,6 +132,9 @@ export async function createWorkstationAssignment(
 ) {
   return await request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    headers: {
+      "Content-Type": "application/json"
+    }
   });
 }
