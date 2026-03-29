@@ -5,21 +5,25 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getWorkstations } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
+type WorkstationAssetItem = {
+  id?: string;
+  assignmentType?: string;
+  asset?: {
+    id?: string;
+    assetCode?: string;
+    assetType?: {
+      name?: string;
+    };
+  };
+};
+
 type WorkstationPageItem = {
   id: string;
   code: string;
   name?: string;
-  location: string;
-  status: string;
-  assets?: Array<{
-    id: string;
-    asset: {
-      id: string;
-      assetCode: string;
-      assetType: { name: string };
-    };
-    assignmentType: string;
-  }>;
+  location?: string;
+  status?: string;
+  assets?: WorkstationAssetItem[];
   _count?: {
     assets?: number;
     repairs?: number;
@@ -27,6 +31,34 @@ type WorkstationPageItem = {
   assetCount?: number;
   machineCount?: number;
 };
+
+function normalizeWorkstations(input: unknown): WorkstationPageItem[] {
+  if (Array.isArray(input)) {
+    return input as WorkstationPageItem[];
+  }
+
+  if (input && typeof input === "object") {
+    const value = input as {
+      items?: unknown;
+      data?: unknown;
+      workstations?: unknown;
+    };
+
+    if (Array.isArray(value.items)) {
+      return value.items as WorkstationPageItem[];
+    }
+
+    if (Array.isArray(value.data)) {
+      return value.data as WorkstationPageItem[];
+    }
+
+    if (Array.isArray(value.workstations)) {
+      return value.workstations as WorkstationPageItem[];
+    }
+  }
+
+  return [];
+}
 
 export default async function WorkstationsPage({
   searchParams
@@ -39,9 +71,26 @@ export default async function WorkstationsPage({
   appendQueryParam(query, "search", params?.search);
   appendQueryParam(query, "status", params?.status);
 
-  const workstations = (await getWorkstations(
-    query.toString() ? `?${query.toString()}` : ""
-  )) as WorkstationPageItem[];
+  let workstations: WorkstationPageItem[] = [];
+
+  try {
+    const result = await getWorkstations(query.toString() ? `?${query.toString()}` : "");
+    workstations = normalizeWorkstations(result);
+  } catch (error) {
+    console.error("Failed to load workstations page:", error);
+
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          title="Workstations"
+          description="Review all workstations, current asset counts, workstation health, and whether any replacement machine is active."
+        />
+        <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
+          <p className="text-sm text-red-600">Failed to load workstations.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -77,18 +126,21 @@ export default async function WorkstationsPage({
 
       <div className="grid gap-4 xl:grid-cols-2">
         {workstations.map((workstation) => {
-          const assets = workstation.assets ?? [];
+          const assets = Array.isArray(workstation.assets) ? workstation.assets : [];
+
           const machineCount =
             workstation.machineCount ??
-            assets.filter((item) => item.asset.assetType.name === "Machine").length;
+            assets.filter((item) => item?.asset?.assetType?.name === "Machine").length;
 
           const activeReplacement = assets.find(
             (item) =>
-              item.assignmentType === "TEMPORARY_REPLACEMENT" ||
-              item.assignmentType === "Temporary Replacement"
+              item?.assignmentType === "TEMPORARY_REPLACEMENT" ||
+              item?.assignmentType === "Temporary Replacement"
           );
 
-          const assetCount = workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+          const assetCount =
+            workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+
           const repairCount = workstation._count?.repairs ?? 0;
 
           return (
@@ -105,9 +157,11 @@ export default async function WorkstationsPage({
                   <h2 className="mt-2 text-xl font-semibold">
                     {workstation.name ?? workstation.code}
                   </h2>
-                  <p className="mt-2 text-sm text-[var(--muted)]">{workstation.location}</p>
+                  <p className="mt-2 text-sm text-[var(--muted)]">
+                    {workstation.location ?? "No location"}
+                  </p>
                 </div>
-                <StatusBadge value={workstation.status} />
+                <StatusBadge value={workstation.status ?? "UNKNOWN"} />
               </div>
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
@@ -128,7 +182,7 @@ export default async function WorkstationsPage({
                     Replacement
                   </p>
                   <p className="mt-2 text-sm font-semibold">
-                    {activeReplacement ? activeReplacement.asset.assetCode : "None active"}
+                    {activeReplacement?.asset?.assetCode ?? "None active"}
                   </p>
                 </div>
               </div>
@@ -144,12 +198,15 @@ export default async function WorkstationsPage({
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
         <DataTable headers={["Code", "Location", "Status", "Assets", "Machines", "Open Repairs"]}>
           {workstations.map((workstation) => {
-            const assets = workstation.assets ?? [];
+            const assets = Array.isArray(workstation.assets) ? workstation.assets : [];
+
             const machineCount =
               workstation.machineCount ??
-              assets.filter((item) => item.asset.assetType.name === "Machine").length;
+              assets.filter((item) => item?.asset?.assetType?.name === "Machine").length;
 
-            const assetCount = workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+            const assetCount =
+              workstation._count?.assets ?? workstation.assetCount ?? assets.length;
+
             const repairCount = workstation._count?.repairs ?? 0;
 
             return (
@@ -162,9 +219,9 @@ export default async function WorkstationsPage({
                     {workstation.code}
                   </Link>
                 </td>
-                <td className="px-4 py-4 text-sm">{workstation.location}</td>
+                <td className="px-4 py-4 text-sm">{workstation.location ?? "No location"}</td>
                 <td className="px-4 py-4 text-sm">
-                  <StatusBadge value={workstation.status} />
+                  <StatusBadge value={workstation.status ?? "UNKNOWN"} />
                 </td>
                 <td className="px-4 py-4 text-sm">{assetCount}</td>
                 <td className="px-4 py-4 text-sm">{machineCount}</td>
