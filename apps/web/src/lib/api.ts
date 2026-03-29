@@ -1,67 +1,119 @@
 import { cache } from "react";
 
 function getApiBaseUrl() {
-  // browser side
-  if (typeof window !== "undefined") {
-    return "/api";
-  }
-
-  // server side (Vercel)
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}/api`;
-  }
-
-  // local dev
-  return "http://localhost:3000/api";
+  // Use relative API path for both browser and server
+  // This avoids Vercel URL issues in many Next.js app-router setups
+  return "/api";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = getApiBaseUrl();
+  const url = `${baseUrl}${path}`;
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    cache: "no-store"
-  });
+  try {
+    const response = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {})
+      },
+      cache: "no-store"
+    });
 
-  const data = await response.json().catch(() => ({}));
+    const rawText = await response.text();
 
-  if (!response.ok) {
-    throw new Error(data?.error?.message || "Request failed");
+    let data: any = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = { message: rawText || "Non-JSON response received" };
+    }
+
+    if (!response.ok) {
+      console.error("API request failed", {
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        body: data
+      });
+
+      throw new Error(
+        data?.error?.message ||
+          data?.message ||
+          `Request failed with status ${response.status}`
+      );
+    }
+
+    return data as T;
+  } catch (error) {
+    console.error("Fetch error:", {
+      url,
+      error
+    });
+
+    if (error instanceof Error) {
+      throw error;
+    }
+
+    throw new Error("Unexpected request error");
   }
-
-  return data as T;
 }
 
-export const getDashboard = cache(() => request("/dashboard"));
-export const getWorkstations = cache((query = "") => request(`/workstations${query}`));
-export const getWorkstation = cache((id: string) => request(`/workstations/${id}`));
-export const getAssets = cache((query = "") => request(`/assets${query}`));
-export const getAsset = cache((id: string) => request(`/assets/${id}`));
-export const getAssetTypes = cache(() => request("/assets/types/all"));
-export const getRepairs = cache((query = "") => request(`/repairs${query}`));
-export const getAlerts = cache((query = "") => request(`/alerts${query}`));
-export const getReplacements = cache(() => request("/replacements"));
+export const getDashboard = cache(async () => {
+  return await request("/dashboard");
+});
+
+export const getWorkstations = cache(async (query = "") => {
+  return await request(`/workstations${query}`);
+});
+
+export const getWorkstation = cache(async (id: string) => {
+  return await request(`/workstations/${id}`);
+});
+
+export const getAssets = cache(async (query = "") => {
+  return await request(`/assets${query}`);
+});
+
+export const getAsset = cache(async (id: string) => {
+  return await request(`/assets/${id}`);
+});
+
+export const getAssetTypes = cache(async () => {
+  return await request("/assets/types/all");
+});
+
+export const getRepairs = cache(async (query = "") => {
+  return await request(`/repairs${query}`);
+});
+
+export const getAlerts = cache(async (query = "") => {
+  return await request(`/alerts${query}`);
+});
+
+export const getReplacements = cache(async () => {
+  return await request("/replacements");
+});
 
 export async function createRepair(payload: unknown) {
-  return request("/repairs", {
+  return await request("/repairs", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export async function createAsset(payload: unknown) {
-  return request("/assets", {
+  return await request("/assets", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
-export async function createWorkstationAssignment(workstationId: string, payload: unknown) {
-  return request(`/workstations/${workstationId}/assignments`, {
+export async function createWorkstationAssignment(
+  workstationId: string,
+  payload: unknown
+) {
+  return await request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
