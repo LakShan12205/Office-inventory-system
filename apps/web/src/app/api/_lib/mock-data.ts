@@ -754,6 +754,25 @@ function contains(value: string | undefined | null, search: string) {
   return value?.toLowerCase().includes(search.toLowerCase()) ?? false;
 }
 
+function matchesAssetTypeFilter(assetTypeName: string, filter?: string) {
+  if (!filter) return true;
+
+  const normalizedFilter = filter.trim().toLowerCase();
+  const normalizedType = assetTypeName.trim().toLowerCase();
+
+  if (normalizedFilter === "peripheral") {
+    return ["keyboard", "mouse", "tablet", "phone", "vga cable", "cable"].some((value) =>
+      normalizedType.includes(value)
+    );
+  }
+
+  if (normalizedFilter === "cable") {
+    return normalizedType.includes("cable") || normalizedType.includes("vga");
+  }
+
+  return normalizedType.includes(normalizedFilter);
+}
+
 function definedValue(value: string | null) {
   if (!value) return undefined;
   const trimmed = value.trim();
@@ -799,23 +818,62 @@ export function getWorkstationById(id: string) {
   return workstationDetailView(workstation);
 }
 
-export function listAssets(filters: { search?: string; type?: string; status?: string }) {
+function parsePositiveNumber(value: string | null, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function listAssets(filters: {
+  search?: string;
+  type?: string;
+  status?: string;
+  location?: string;
+  page?: number;
+  pageSize?: number;
+}) {
   const db = getDb();
-  return db.assets
+  const filtered = db.assets
     .filter((asset) => {
       if (filters.status && asset.status !== filters.status) return false;
-      if (filters.type && !contains(assetTypeMap(asset.assetTypeId).name, filters.type)) return false;
+      if (filters.type && !matchesAssetTypeFilter(assetTypeMap(asset.assetTypeId).name, filters.type)) return false;
+      const activeAssignment = workstationAssignmentsFor(asset.id, true)[0];
+      const locationValue =
+        activeAssignment?.workstation.code ??
+        activeAssignment?.workstation.location ??
+        asset.currentLocation ??
+        "Store";
+
+      if (filters.location && !contains(locationValue, filters.location)) return false;
       if (filters.search) {
-        const activeAssignment = workstationAssignmentsFor(asset.id, true)[0];
         const matches =
           contains(asset.assetCode, filters.search) ||
           contains(asset.serialNumber, filters.search) ||
-          contains(activeAssignment?.workstation.code, filters.search);
+          contains(asset.brand, filters.search) ||
+          contains(asset.model, filters.search);
         if (!matches) return false;
       }
       return true;
     })
     .map(assetListView);
+
+  const pageSize = [25, 50, 100].includes(filters.pageSize ?? 25) ? (filters.pageSize ?? 25) : 25;
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(filters.page ?? 1, totalPages);
+  const startIndex = total === 0 ? 0 : (page - 1) * pageSize;
+
+  return {
+    items: filtered.slice(startIndex, startIndex + pageSize),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      start: total === 0 ? 0 : startIndex + 1,
+      end: total === 0 ? 0 : Math.min(startIndex + pageSize, total)
+    }
+  };
 }
 
 export function getAssetById(id: string) {
@@ -994,7 +1052,10 @@ export function parseAssetFilters(searchParams: URLSearchParams) {
   return {
     search: definedValue(searchParams.get("search")),
     type: definedValue(searchParams.get("type")),
-    status: definedValue(searchParams.get("status"))
+    status: definedValue(searchParams.get("status")),
+    location: definedValue(searchParams.get("location")),
+    page: parsePositiveNumber(searchParams.get("page"), 1),
+    pageSize: parsePositiveNumber(searchParams.get("pageSize"), 25)
   };
 }
 

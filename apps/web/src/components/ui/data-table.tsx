@@ -1,15 +1,21 @@
 export function DataTable({
   headers,
-  children
+  children,
+  stickyHeader = false
 }: {
   headers: string[];
   children: React.ReactNode;
+  stickyHeader?: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded-[1.5rem] border border-[var(--border)] bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-[var(--border)]">
-          <thead className="bg-gradient-to-r from-[var(--panel-strong)] via-[#f5ecde] to-[var(--panel-strong)]">
+          <thead
+            className={`bg-gradient-to-r from-[var(--panel-strong)] via-[#f5ecde] to-[var(--panel-strong)] ${
+              stickyHeader ? "sticky top-0 z-10" : ""
+            }`}
+          >
             <tr>
               {headers.map((header) => (
                 <th

@@ -1,11 +1,11 @@
 import { StatusTone } from "@/lib/types";
 
 const toneClasses: Record<StatusTone, string> = {
-  success: "bg-emerald-100 text-emerald-800",
-  warning: "bg-amber-100 text-amber-800",
-  danger: "bg-rose-100 text-rose-700",
-  neutral: "bg-slate-100 text-slate-700",
-  info: "bg-blue-100 text-blue-700"
+  success: "border border-emerald-200 bg-emerald-100 text-emerald-900 shadow-sm",
+  warning: "border border-amber-200 bg-amber-100 text-amber-900 shadow-sm",
+  danger: "border border-rose-200 bg-rose-100 text-rose-900 shadow-sm",
+  neutral: "border border-slate-200 bg-slate-100 text-slate-800 shadow-sm",
+  info: "border border-blue-200 bg-blue-100 text-blue-800 shadow-sm"
 };
 
 const statusToneMap: Record<string, StatusTone> = {
