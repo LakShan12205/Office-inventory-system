@@ -32,7 +32,33 @@ body {
   background:
     radial-gradient(circle at top left, rgba(201, 111, 45, 0.16), transparent 28%),
     radial-gradient(circle at right 20%, rgba(24, 49, 83, 0.12), transparent 25%),
+    radial-gradient(circle at 50% 120%, rgba(255, 255, 255, 0.78), transparent 32%),
     linear-gradient(180deg, #f8f4ed 0%, #f3eee6 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.3;
+  background-image:
+    linear-gradient(rgba(24, 49, 83, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(24, 49, 83, 0.035) 1px, transparent 1px);
+  background-size: 120px 120px;
+  mask-image: radial-gradient(circle at center, black 35%, transparent 78%);
+}
+
+.dashboard-grid-glow {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.dashboard-dots {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.18) 1.4px, transparent 1.4px);
+  background-size: 18px 18px;
 }
 
 a {
