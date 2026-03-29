@@ -7,27 +7,55 @@ import { appendQueryParam } from "@/lib/query";
 
 type AssetPageRecord = {
   id: string;
-  assetCode: string;
-  brand: string;
-  model: string;
+  assetCode?: string;
+  brand?: string;
+  model?: string;
   serialNumber?: string | null;
-  status: string;
+  status?: string;
   currentLocation?: string | null;
-  assetType: {
-    id: string;
-    name: string;
-  };
+  assetType?: {
+    id?: string;
+    name?: string;
+  } | null;
   workstation?: {
-    id: string;
-    code: string;
+    id?: string;
+    code?: string;
   } | null;
   workstationAssignments?: Array<{
-    workstation: {
-      id: string;
-      code: string;
-    };
+    workstation?: {
+      id?: string;
+      code?: string;
+    } | null;
   }>;
 };
+
+function normalizeAssets(input: unknown): AssetPageRecord[] {
+  if (Array.isArray(input)) {
+    return input as AssetPageRecord[];
+  }
+
+  if (input && typeof input === "object") {
+    const value = input as {
+      items?: unknown;
+      data?: unknown;
+      assets?: unknown;
+    };
+
+    if (Array.isArray(value.items)) {
+      return value.items as AssetPageRecord[];
+    }
+
+    if (Array.isArray(value.data)) {
+      return value.data as AssetPageRecord[];
+    }
+
+    if (Array.isArray(value.assets)) {
+      return value.assets as AssetPageRecord[];
+    }
+  }
+
+  return [];
+}
 
 export default async function AssetsPage({
   searchParams
@@ -41,9 +69,34 @@ export default async function AssetsPage({
   appendQueryParam(query, "type", params?.type);
   appendQueryParam(query, "status", params?.status);
 
-  const assets = (await getAssets(
-    query.toString() ? `?${query.toString()}` : ""
-  )) as AssetPageRecord[];
+  let assets: AssetPageRecord[] = [];
+
+  try {
+    const result = await getAssets(query.toString() ? `?${query.toString()}` : "");
+    assets = normalizeAssets(result);
+  } catch (error) {
+    console.error("Failed to load assets page:", error);
+
+    return (
+      <div className="space-y-5">
+        <PageHeader
+          title="Assets"
+          description="Search by workstation code, asset code, or serial number, and filter by asset type or status."
+          action={
+            <Link
+              href="/assets/new"
+              className="rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-semibold text-white"
+            >
+              Add asset
+            </Link>
+          }
+        />
+        <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
+          <p className="text-sm text-red-600">Failed to load assets.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -99,25 +152,32 @@ export default async function AssetsPage({
         >
           {assets.map((asset) => {
             const workstationCode =
-              asset.workstationAssignments?.[0]?.workstation.code ||
-              asset.workstation?.code ||
-              asset.currentLocation ||
+              asset.workstationAssignments?.[0]?.workstation?.code ??
+              asset.workstation?.code ??
+              asset.currentLocation ??
               "Store";
+
+            const assetCode = asset.assetCode ?? "Unknown Asset";
+            const assetTypeName = asset.assetType?.name ?? "Unknown Type";
+            const brandModel = `${asset.brand ?? "Unknown Brand"} ${asset.model ?? "Unknown Model"}`;
+            const serialNumber = asset.serialNumber ?? "-";
+            const status = asset.status ?? "UNKNOWN";
 
             return (
               <tr key={asset.id}>
                 <td className="px-4 py-4 text-sm font-medium">
-                  <Link href={`/assets/${asset.id}`} className="text-[var(--nav)] hover:text-[var(--accent)]">
-                    {asset.assetCode}
+                  <Link
+                    href={`/assets/${asset.id}`}
+                    className="text-[var(--nav)] hover:text-[var(--accent)]"
+                  >
+                    {assetCode}
                   </Link>
                 </td>
-                <td className="px-4 py-4 text-sm">{asset.assetType.name}</td>
-                <td className="px-4 py-4 text-sm text-[var(--muted)]">
-                  {asset.brand} {asset.model}
-                </td>
-                <td className="px-4 py-4 text-sm">{asset.serialNumber || "-"}</td>
+                <td className="px-4 py-4 text-sm">{assetTypeName}</td>
+                <td className="px-4 py-4 text-sm text-[var(--muted)]">{brandModel}</td>
+                <td className="px-4 py-4 text-sm">{serialNumber}</td>
                 <td className="px-4 py-4 text-sm">
-                  <StatusBadge value={asset.status} />
+                  <StatusBadge value={status} />
                 </td>
                 <td className="px-4 py-4 text-sm">{workstationCode}</td>
               </tr>
