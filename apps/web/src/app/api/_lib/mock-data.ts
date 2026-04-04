@@ -10,6 +10,8 @@ type AssignmentType = "PRIMARY" | "TEMPORARY_REPLACEMENT" | "SPARE";
 type RepairType = "ON_SITE" | "SENT_TO_SHOP";
 type RepairStatus = "REPORTED" | "SENT" | "IN_PROGRESS" | "RETURNED" | "CLOSED";
 type ReplacementStatus = "ACTIVE" | "REMOVED" | "PENDING_RESTORE";
+type ReplacementType = "TEMPORARY" | "PERMANENT";
+type ReplacementReason = "DUE_TO_ONGOING_REPAIR" | "NOT_WORKING" | "OTHER";
 type AlertStatus = "NEW" | "READ" | "RESOLVED";
 type AlertPriority = "LOW" | "MEDIUM" | "HIGH";
 type AlertType =
@@ -101,7 +103,16 @@ type ReplacementRecord = {
   originalAssetId: string;
   replacementAssetId: string;
   workstationId: string;
+  flowCode?: string;
+  workstationCode?: string;
+  deviceType?: string;
+  replacementType: ReplacementType;
   replacementDate: string;
+  fromLocation?: string | null;
+  toLocation?: string | null;
+  assignedUser?: string | null;
+  reason: ReplacementReason;
+  isReturned: boolean;
   replacementReturnDate?: string | null;
   status: ReplacementStatus;
   notes?: string | null;
@@ -178,6 +189,16 @@ type CreateRepairInput = {
   replacementNotes?: string | null;
 };
 
+type CreateReplacementInput = {
+  originalAssetId: string;
+  replacementAssetId: string;
+  replacementType: "TEMPORARY" | "PERMANENT";
+  replacementDate: string;
+  reason: ReplacementReason;
+  customReason?: string | null;
+  workstationId?: string | null;
+};
+
 function makeError(status: number, message: string) {
   const error = new Error(message) as Error & { status: number };
   error.status = status;
@@ -206,6 +227,7 @@ function buildSeedData(): MockDb {
     { id: "type-monitor", code: "MON", name: "Monitor", description: "Office monitor", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-tv", code: "TV", name: "TV", description: "Display television", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-machine", code: "MACH", name: "Machine", description: "Workstation machine", trackIndividually: true, createdAt, updatedAt: createdAt },
+    { id: "type-ac", code: "AC", name: "AC", description: "Air conditioning unit", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-ups", code: "UPS", name: "UPS", description: "Power backup unit", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-keyboard", code: "KEY", name: "Keyboard", description: "Keyboard", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-mouse", code: "MOU", name: "Mouse", description: "Mouse", trackIndividually: true, createdAt, updatedAt: createdAt },
@@ -360,18 +382,38 @@ function buildSeedData(): MockDb {
       createdAt,
       updatedAt: createdAt,
       deletedAt: null
+    },
+    {
+      id: "asset-spare-4",
+      assetCode: "MACH-028",
+      assetTypeId: getAssetTypeByName("Machine").id,
+      brand: "Dell",
+      model: "OptiPlex 7010",
+      serialNumber: "SR-MACH-028",
+      specification: "Intel i5 / 16GB RAM / 512GB SSD",
+      purchaseDate: iso("2025-10-03"),
+      status: "ACTIVE",
+      currentLocation: "WS-11",
+      notes: "Permanent replacement unit",
+      createdAt,
+      updatedAt: createdAt,
+      deletedAt: null
     }
   );
 
   const mach005 = assets.find((asset) => asset.assetCode === "MACH-005")!;
   const mach013 = assets.find((asset) => asset.assetCode === "MACH-013")!;
   const mach017 = assets.find((asset) => asset.assetCode === "MACH-017")!;
+  const mach021 = assets.find((asset) => asset.assetCode === "MACH-021")!;
   const ws03 = getWorkstationByCode("WS-03");
   const ws07 = getWorkstationByCode("WS-07");
   const ws09 = getWorkstationByCode("WS-09");
+  const ws11 = getWorkstationByCode("WS-11");
 
   mach005.status = "IN_REPAIR";
   mach005.currentLocation = "TechFix Workshop";
+  mach021.status = "RETIRED";
+  mach021.currentLocation = "Vendor Assessment Desk";
 
   assignments.forEach((assignment) => {
     if (assignment.assetId === mach005.id && assignment.isActive) {
@@ -402,8 +444,26 @@ function buildSeedData(): MockDb {
       notes: "Replacement for MACH-013",
       createdAt: iso("2026-03-10"),
       updatedAt: iso("2026-03-10")
+    },
+    {
+      id: `assignment-${assignmentCounter++}`,
+      workstationId: ws11.id,
+      assetId: "asset-spare-4",
+      assignmentType: "PRIMARY",
+      assignedDate: iso("2026-03-25"),
+      isActive: true,
+      notes: "Permanent replacement for MACH-021",
+      createdAt: iso("2026-03-25"),
+      updatedAt: iso("2026-03-25")
     }
   );
+
+  assignments.forEach((assignment) => {
+    if (assignment.assetId === mach021.id && assignment.isActive) {
+      assignment.isActive = false;
+      assignment.unassignedDate = iso("2026-03-25");
+    }
+  });
 
   repairs.push(
     {
@@ -510,6 +570,27 @@ function buildSeedData(): MockDb {
       status: "CLOSED",
       createdAt: iso("2026-02-18"),
       updatedAt: iso("2026-02-20")
+    },
+    {
+      id: "repair-6",
+      workstationId: ws11.id,
+      assetId: mach021.id,
+      reportedDate: iso("2026-03-18"),
+      faultDescription: "Repeated motherboard failure and unstable boot cycle",
+      sentTo: "Vendor escalation desk",
+      repairType: "SENT_TO_SHOP",
+      sentDate: iso("2026-03-19"),
+      expectedReturnDate: iso("2026-03-25"),
+      actualReturnDate: null,
+      diagnosis: "Board replacement not economical",
+      repairAction: "Retired original unit and approved permanent replacement",
+      partsChanged: null,
+      cost: null,
+      handledBy: "IT Operations",
+      notes: "Permanent replacement issued to workstation",
+      status: "CLOSED",
+      createdAt: iso("2026-03-18"),
+      updatedAt: iso("2026-03-25")
     }
   );
 
@@ -520,7 +601,16 @@ function buildSeedData(): MockDb {
       originalAssetId: mach005.id,
       replacementAssetId: "asset-spare-1",
       workstationId: ws03.id,
+      flowCode: getFlowCodeFromWorkstationCode(ws03.code),
+      workstationCode: ws03.code,
+      deviceType: "Machine",
+      replacementType: "TEMPORARY",
       replacementDate: iso("2026-03-15"),
+      fromLocation: "Main Store",
+      toLocation: ws03.code,
+      assignedUser: "Nimal Perera",
+      reason: "DUE_TO_ONGOING_REPAIR",
+      isReturned: false,
       replacementReturnDate: null,
       status: "ACTIVE",
       notes: "Replacement issued while machine is away",
@@ -529,16 +619,69 @@ function buildSeedData(): MockDb {
     },
     {
       id: "replacement-2",
+      repairId: "repair-3",
+      originalAssetId: mach017.id,
+      replacementAssetId: "asset-spare-3",
+      workstationId: ws09.id,
+      flowCode: getFlowCodeFromWorkstationCode(ws09.code),
+      workstationCode: ws09.code,
+      deviceType: "Machine",
+      replacementType: "TEMPORARY",
+      replacementDate: iso("2025-11-10"),
+      fromLocation: "Main Store",
+      toLocation: ws09.code,
+      assignedUser: "IT Helpdesk",
+      reason: "OTHER",
+      isReturned: true,
+      replacementReturnDate: iso("2025-11-13"),
+      status: "REMOVED",
+      notes: "Temporary spare returned after repair close",
+      createdAt: iso("2025-11-10"),
+      updatedAt: iso("2025-11-13")
+    },
+    {
+      id: "replacement-3",
       repairId: "repair-2",
       originalAssetId: mach013.id,
       replacementAssetId: "asset-spare-2",
       workstationId: ws07.id,
+      flowCode: getFlowCodeFromWorkstationCode(ws07.code),
+      workstationCode: ws07.code,
+      deviceType: "Machine",
+      replacementType: "TEMPORARY",
       replacementDate: iso("2026-03-10"),
+      fromLocation: "Main Store",
+      toLocation: ws07.code,
+      assignedUser: "S. Fernando",
+      reason: "NOT_WORKING",
+      isReturned: false,
       replacementReturnDate: null,
       status: "PENDING_RESTORE",
       notes: "Original returned but replacement still active",
       createdAt: iso("2026-03-10"),
       updatedAt: iso("2026-03-24")
+    },
+    {
+      id: "replacement-4",
+      repairId: "repair-6",
+      originalAssetId: mach021.id,
+      replacementAssetId: "asset-spare-4",
+      workstationId: ws11.id,
+      flowCode: getFlowCodeFromWorkstationCode(ws11.code),
+      workstationCode: ws11.code,
+      deviceType: "Machine",
+      replacementType: "PERMANENT",
+      replacementDate: iso("2026-03-25"),
+      fromLocation: "Main Store",
+      toLocation: ws11.code,
+      assignedUser: "IT Operations",
+      reason: "NOT_WORKING",
+      isReturned: false,
+      replacementReturnDate: null,
+      status: "ACTIVE",
+      notes: "Permanent replacement approved after vendor assessment",
+      createdAt: iso("2026-03-25"),
+      updatedAt: iso("2026-03-25")
     }
   );
 
@@ -648,6 +791,11 @@ function assetTypeMap(assetTypeId: string) {
   return getDb().assetTypes.find((assetType) => assetType.id === assetTypeId)!;
 }
 
+function getFlowCodeFromWorkstationCode(workstationCode: string) {
+  const numericCode = Number(workstationCode.split("-")[1]);
+  return numericCode >= 7 ? "Flow-01" : "Flow-02";
+}
+
 function workstationAssignmentsFor(assetId: string, onlyActive = false) {
   return getDb()
     .assignments.filter((assignment) => assignment.assetId === assetId && (!onlyActive || assignment.isActive))
@@ -658,11 +806,21 @@ function workstationAssignmentsFor(assetId: string, onlyActive = false) {
     .sort((a, b) => b.assignedDate.localeCompare(a.assignedDate));
 }
 
+function activeReplacementStatus(replacement: ReplacementRecord) {
+  const repair = getDb().repairs.find((item) => item.id === replacement.repairId);
+  if (replacement.isReturned) return "RETURNED";
+  if (replacement.replacementType === "PERMANENT") return "PERMANENT";
+  if (repair?.expectedReturnDate && new Date(repair.expectedReturnDate) < today()) return "OVERDUE";
+  return "ACTIVE";
+}
+
 function assetListView(asset: AssetRecord) {
+  const context = assetContextView(asset);
   return {
     ...asset,
     assetType: assetTypeMap(asset.assetTypeId),
     workstationAssignments: workstationAssignmentsFor(asset.id, true),
+    ...context,
     repairs: getDb()
       .repairs.filter((repair) => repair.assetId === asset.id)
       .map((repair) => repairView(repair))
@@ -754,6 +912,45 @@ function contains(value: string | undefined | null, search: string) {
   return value?.toLowerCase().includes(search.toLowerCase()) ?? false;
 }
 
+function extractAssetMetadata(asset: AssetRecord, label: string) {
+  const source = `${asset.notes ?? ""} | ${asset.specification ?? ""}`;
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`${escapedLabel}:\\s*([^|]+)`, "i"));
+  return match?.[1]?.trim() ?? null;
+}
+
+function assetContextView(asset: AssetRecord) {
+  const activeAssignment = workstationAssignmentsFor(asset.id, true)[0];
+  const flow = extractAssetMetadata(asset, "Flow");
+  const side = extractAssetMetadata(asset, "Side");
+  const assetScope = extractAssetMetadata(asset, "Asset Scope");
+  const generalLocation = extractAssetMetadata(asset, "General Location");
+  const specificLocationNotes = extractAssetMetadata(asset, "Specific Location / Notes");
+  const assignedWorkstation =
+    extractAssetMetadata(asset, "Assigned Workstation") ??
+    activeAssignment?.workstation.code ??
+    null;
+  const isWorkstationDevice = Boolean(activeAssignment) || assetScope === "Workstation Device";
+  const displayLocation = isWorkstationDevice
+    ? [assignedWorkstation, side].filter(Boolean).join(" / ") ||
+      assignedWorkstation ||
+      flow ||
+      asset.currentLocation ||
+      "Store"
+    : generalLocation || asset.currentLocation || "Store";
+
+  return {
+    assetScope: assetScope ?? (isWorkstationDevice ? "Workstation Device" : "Other / Non-Workstation Device"),
+    flow,
+    side,
+    generalLocation,
+    specificLocationNotes,
+    workstationCode: assignedWorkstation,
+    displayLocation,
+    currentLocationDisplay: displayLocation
+  };
+}
+
 function matchesAssetTypeFilter(assetTypeName: string, filter?: string) {
   if (!filter) return true;
 
@@ -785,15 +982,20 @@ export function listAssetTypes() {
 
 export function getDashboardData() {
   const db = getDb();
+  const returnedReplacements = db.replacements.filter((replacement) => replacement.isReturned).length;
+  const followUpAlerts = db.alerts.filter((alert) => alert.status !== "RESOLVED").length;
   return {
     stats: {
       totalWorkstations: db.workstations.length,
       totalAssets: db.assets.length,
       machinesInRepair: db.assets.filter((asset) => asset.status === "IN_REPAIR").length,
-      activeTemporaryReplacements: db.replacements.filter((replacement) => replacement.status !== "REMOVED").length,
+      activeTemporaryReplacements: db.replacements.filter((replacement) => !replacement.isReturned).length,
+      returnedReplacements,
       overdueRepairs: db.repairs.filter(
         (repair) => repair.expectedReturnDate && new Date(repair.expectedReturnDate) < today() && !repair.actualReturnDate
       ).length
+      ,
+      followUpAlerts
     },
     latestAlerts: db.alerts.slice().sort((a, b) => b.alertDate.localeCompare(a.alertDate)).slice(0, 6).map(alertView),
     recentRepairs: db.repairs.slice().sort((a, b) => b.reportedDate.localeCompare(a.reportedDate)).slice(0, 6).map(repairView)
@@ -837,27 +1039,41 @@ export function listAssets(filters: {
     .filter((asset) => {
       if (filters.status && asset.status !== filters.status) return false;
       if (filters.type && !matchesAssetTypeFilter(assetTypeMap(asset.assetTypeId).name, filters.type)) return false;
-      const activeAssignment = workstationAssignmentsFor(asset.id, true)[0];
-      const locationValue =
-        activeAssignment?.workstation.code ??
-        activeAssignment?.workstation.location ??
-        asset.currentLocation ??
-        "Store";
+      const context = assetContextView(asset);
 
-      if (filters.location && !contains(locationValue, filters.location)) return false;
+      if (
+        filters.location &&
+        ![
+          context.workstationCode,
+          context.generalLocation,
+          context.flow,
+          context.displayLocation,
+          asset.currentLocation
+        ].some((value) => contains(value, filters.location!))
+      ) {
+        return false;
+      }
+
       if (filters.search) {
         const matches =
           contains(asset.assetCode, filters.search) ||
           contains(asset.serialNumber, filters.search) ||
           contains(asset.brand, filters.search) ||
-          contains(asset.model, filters.search);
+          contains(asset.model, filters.search) ||
+          contains(context.assetScope, filters.search) ||
+          contains(context.generalLocation, filters.search) ||
+          contains(context.specificLocationNotes, filters.search) ||
+          contains(context.workstationCode, filters.search) ||
+          contains(context.flow, filters.search) ||
+          contains(context.side, filters.search);
         if (!matches) return false;
       }
       return true;
     })
     .map(assetListView);
 
-  const pageSize = [25, 50, 100].includes(filters.pageSize ?? 25) ? (filters.pageSize ?? 25) : 25;
+  const allowedPageSizes = [25, 50, 100, 250, 500, 1000];
+  const pageSize = allowedPageSizes.includes(filters.pageSize ?? 25) ? (filters.pageSize ?? 25) : 25;
   const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(filters.page ?? 1, totalPages);
@@ -912,18 +1128,188 @@ export function listAlerts(filters: { status?: string; priority?: string; workst
     .map(alertView);
 }
 
+export function updateAlert(id: string, action: "read" | "dismiss") {
+  const db = getDb();
+  const alert = db.alerts.find((item) => item.id === id);
+  if (!alert) throw makeError(404, "Alert not found");
+
+  const now = nowIso();
+  if (action === "read") {
+    alert.status = "READ";
+    alert.updatedAt = now;
+  }
+
+  if (action === "dismiss") {
+    alert.status = "RESOLVED";
+    alert.resolvedAt = now;
+    alert.updatedAt = now;
+  }
+
+  return alertView(alert);
+}
+
 export function listReplacements() {
   const db = getDb();
   return db.replacements
     .slice()
     .sort((a, b) => b.replacementDate.localeCompare(a.replacementDate))
-    .map((replacement) => ({
-      ...replacement,
-      workstation: db.workstations.find((workstation) => workstation.id === replacement.workstationId)!,
-      originalAsset: db.assets.find((asset) => asset.id === replacement.originalAssetId)!,
-      replacementAsset: db.assets.find((asset) => asset.id === replacement.replacementAssetId)!,
-      repair: db.repairs.find((repair) => repair.id === replacement.repairId)!
-    }));
+    .map((replacement) => {
+      const originalAsset = db.assets.find((asset) => asset.id === replacement.originalAssetId)!;
+      const replacementAsset = db.assets.find((asset) => asset.id === replacement.replacementAssetId)!;
+      return {
+        ...replacement,
+        flowCode: replacement.flowCode ?? getFlowCodeFromWorkstationCode(db.workstations.find((workstation) => workstation.id === replacement.workstationId)!.code),
+        workstationCode: replacement.workstationCode ?? db.workstations.find((workstation) => workstation.id === replacement.workstationId)!.code,
+        deviceType: replacement.deviceType ?? assetTypeMap(originalAsset.assetTypeId).name,
+        inventoryType: assetTypeMap(originalAsset.assetTypeId).name,
+        fromLocation: replacement.fromLocation ?? "Main Store",
+        toLocation: replacement.toLocation ?? db.workstations.find((workstation) => workstation.id === replacement.workstationId)!.code,
+        assignedUser: replacement.assignedUser ?? null,
+        returnDate: replacement.replacementReturnDate ?? null,
+        workstation: db.workstations.find((workstation) => workstation.id === replacement.workstationId)!,
+        originalAsset,
+        replacementAsset,
+        repair: db.repairs.find((repair) => repair.id === replacement.repairId)!
+      };
+    });
+}
+
+export function createReplacement(input: CreateReplacementInput) {
+  const db = getDb();
+  const originalAsset = db.assets.find((asset) => asset.id === input.originalAssetId);
+  if (!originalAsset) throw makeError(404, "Original asset not found");
+
+  const replacementAsset = db.assets.find((asset) => asset.id === input.replacementAssetId);
+  if (!replacementAsset) throw makeError(404, "Replacement asset not found");
+
+  const originalActiveAssignment = db.assignments.find(
+    (assignment) => assignment.assetId === originalAsset.id && assignment.isActive
+  );
+  const workstationId = input.workstationId ?? originalActiveAssignment?.workstationId ?? null;
+  if (!workstationId) {
+    throw makeError(400, "A workstation-linked original asset is required for this replacement flow.");
+  }
+
+  const workstation = db.workstations.find((item) => item.id === workstationId);
+  if (!workstation) throw makeError(404, "Workstation not found");
+
+  if (originalAsset.assetTypeId !== replacementAsset.assetTypeId) {
+    throw makeError(409, "Replacement asset must match the original device type.");
+  }
+
+  if (replacementAsset.status !== "IN_STORE") {
+    throw makeError(409, "Replacement asset must be available in store.");
+  }
+
+  const replacementAssetActiveAssignment = db.assignments.find(
+    (assignment) => assignment.assetId === replacementAsset.id && assignment.isActive
+  );
+  if (replacementAssetActiveAssignment) {
+    throw makeError(409, "Replacement asset is already assigned.");
+  }
+
+  const activeReplacementUsage = db.replacements.find(
+    (replacement) =>
+      replacement.replacementAssetId === replacementAsset.id &&
+      activeReplacementStatus(replacement) === "ACTIVE"
+  );
+  if (activeReplacementUsage) {
+    throw makeError(409, "Replacement asset is already being used as an active replacement.");
+  }
+
+  const replacementDate = input.replacementDate;
+  const now = nowIso();
+  const isPermanent = input.replacementType === "PERMANENT";
+
+  const repair: RepairRecord = {
+    id: `repair-${db.repairs.length + 1}`,
+    workstationId,
+    assetId: originalAsset.id,
+    reportedDate: replacementDate,
+    faultDescription:
+      input.reason === "DUE_TO_ONGOING_REPAIR"
+        ? "Replacement issued due to ongoing repair"
+        : input.reason === "NOT_WORKING"
+          ? "Replacement issued because original device is not working"
+          : input.customReason?.trim() || "Replacement issued",
+    sentTo: null,
+    repairType: "ON_SITE",
+    sentDate: replacementDate,
+    expectedReturnDate: null,
+    actualReturnDate: isPermanent ? replacementDate : null,
+    diagnosis: null,
+    repairAction: isPermanent ? "Permanent replacement assigned" : "Temporary replacement assigned",
+    partsChanged: null,
+    cost: null,
+    handledBy: "Replacement workflow",
+    notes: input.customReason ?? null,
+    status: isPermanent ? "CLOSED" : "IN_PROGRESS",
+    createdAt: now,
+    updatedAt: now
+  };
+  db.repairs.unshift(repair);
+
+  db.assignments.forEach((assignment) => {
+    if (assignment.assetId === originalAsset.id && assignment.isActive) {
+      assignment.isActive = false;
+      assignment.unassignedDate = replacementDate;
+      assignment.updatedAt = now;
+      assignment.notes = assignment.notes ?? "Original replaced";
+    }
+  });
+
+  const replacementAssignment: AssignmentRecord = {
+    id: `assignment-${db.assignments.length + 1}`,
+    workstationId,
+    assetId: replacementAsset.id,
+    assignmentType: isPermanent ? "PRIMARY" : "TEMPORARY_REPLACEMENT",
+    assignedDate: replacementDate,
+    isActive: true,
+    notes: isPermanent ? "Permanent replacement" : "Active replacement",
+    createdAt: replacementDate,
+    updatedAt: replacementDate
+  };
+  db.assignments.unshift(replacementAssignment);
+
+  originalAsset.status =
+    isPermanent
+      ? originalAsset.status === "RETIRED"
+        ? "RETIRED"
+        : "DAMAGED"
+      : originalAsset.status === "DAMAGED" || originalAsset.status === "RETIRED"
+        ? originalAsset.status
+        : "IN_REPAIR";
+  originalAsset.updatedAt = now;
+
+  replacementAsset.status = isPermanent ? "ACTIVE" : "TEMPORARY_REPLACEMENT";
+  replacementAsset.currentLocation = workstation.code;
+  replacementAsset.updatedAt = now;
+
+  const replacement: ReplacementRecord = {
+    id: `replacement-${db.replacements.length + 1}`,
+    repairId: repair.id,
+    originalAssetId: originalAsset.id,
+    replacementAssetId: replacementAsset.id,
+    workstationId,
+    flowCode: getFlowCodeFromWorkstationCode(workstation.code),
+    workstationCode: workstation.code,
+    deviceType: assetTypeMap(originalAsset.assetTypeId).name,
+    replacementType: input.replacementType,
+    replacementDate,
+    fromLocation: "Main Store",
+    toLocation: workstation.code,
+    assignedUser: null,
+    reason: input.reason,
+    isReturned: false,
+    replacementReturnDate: null,
+    status: "ACTIVE",
+    notes: input.reason === "OTHER" ? input.customReason ?? "Other" : null,
+    createdAt: now,
+    updatedAt: now
+  };
+  db.replacements.unshift(replacement);
+
+  return listReplacements().find((item) => item.id === replacement.id)!;
 }
 
 export function createAsset(input: CreateAssetInput) {

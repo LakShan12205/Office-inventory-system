@@ -9,8 +9,8 @@ export default async function NewAssetPage() {
   return (
     <div className="space-y-5">
       <PageHeader
-        title="Add asset"
-        description="Create a new individual asset record with its code, type, specification, location, and lifecycle status."
+        title="Add Inventory"
+        description="Create a new inventory record for office assets."
       />
       <AssetForm assetTypes={assetTypes} />
     </div>

@@ -61,12 +61,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const getDashboard = cache(async () => request("/dashboard"));
 export const getWorkstations = cache(async (query = "") => request(`/workstations${query}`));
 export const getWorkstation = cache(async (id: string) => request(`/workstations/${id}`));
-export const getAssets = cache(async (query = "") => request(`/assets${query}`));
-export const getAsset = cache(async (id: string) => request(`/assets/${id}`));
+// Asset reads stay uncached because the demo mutates in-memory mock data at runtime
+// and pages like /repairs/new must see the exact latest asset state immediately.
+export async function getAssets(query = "") {
+  return request(`/assets${query}`);
+}
+
+export async function getAsset(id: string) {
+  return request(`/assets/${id}`);
+}
 export const getAssetTypes = cache(async () => request("/assets/types/all"));
 export const getRepairs = cache(async (query = "") => request(`/repairs${query}`));
 export const getAlerts = cache(async (query = "") => request(`/alerts${query}`));
 export const getReplacements = cache(async () => request("/replacements"));
+
+export async function createReplacement(payload: unknown) {
+  return request("/replacements", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
 
 export async function createRepair(payload: unknown) {
   return request("/repairs", {
@@ -88,6 +102,16 @@ export async function createWorkstationAssignment(
 ) {
   return request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateAlert(
+  alertId: string,
+  payload: { action: "read" | "dismiss" }
+) {
+  return request(`/alerts/${alertId}`, {
+    method: "PATCH",
     body: JSON.stringify(payload)
   });
 }

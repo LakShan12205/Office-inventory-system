@@ -83,9 +83,18 @@ export type AssetRecord = {
   serialNumber: string;
   specification?: string | null;
   purchaseDate?: string | null;
+  warrantyExpiryDate?: string | null;
   status: string;
   currentLocation?: string | null;
+  currentLocationDisplay?: string | null;
+  displayLocation?: string | null;
   notes?: string | null;
+  assetScope?: string | null;
+  flow?: string | null;
+  side?: string | null;
+  generalLocation?: string | null;
+  specificLocationNotes?: string | null;
+  workstationCode?: string | null;
   assetType: {
     id: string;
     name: string;
@@ -127,13 +136,36 @@ export type WorkstationDetail = {
 
 export type ReplacementRecord = {
   id: string;
+  flowCode?: string;
+  workstationCode?: string;
+  deviceType?: string;
+  replacementType: string;
   replacementDate: string;
   replacementReturnDate?: string | null;
   status: string;
+  inventoryType?: string;
+  fromLocation?: string | null;
+  toLocation?: string | null;
+  assignedUser?: string | null;
+  reason?: string | null;
+  isReturned?: boolean;
+  returnDate?: string | null;
   notes?: string | null;
   workstation: { id: string; code: string; name: string };
-  originalAsset: { id: string; assetCode: string };
-  replacementAsset: { id: string; assetCode: string };
+  originalAsset: {
+    id: string;
+    assetCode: string;
+    serialNumber?: string;
+    currentLocation?: string | null;
+    status?: string;
+  };
+  replacementAsset: {
+    id: string;
+    assetCode: string;
+    serialNumber?: string;
+    currentLocation?: string | null;
+    status?: string;
+  };
   repair: { id: string; status: string; expectedReturnDate?: string | null; actualReturnDate?: string | null };
 };
 
@@ -143,7 +175,9 @@ export type DashboardData = {
     totalAssets: number;
     machinesInRepair: number;
     activeTemporaryReplacements: number;
+    returnedReplacements: number;
     overdueRepairs: number;
+    followUpAlerts: number;
   };
   latestAlerts: AlertRecord[];
   recentRepairs: RepairRecord[];

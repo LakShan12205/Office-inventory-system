@@ -6,6 +6,15 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getAsset } from "@/lib/api";
 import { AssetRecord } from "@/lib/types";
 
+function formatDate(value?: string | null) {
+  if (!value) return "Not recorded";
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
+
 function getAssetTypeIcon(type?: string | null) {
   const iconClass = "h-6 w-6 fill-none stroke-current stroke-[1.8]";
   const normalized = type?.toLowerCase() ?? "";
@@ -147,6 +156,16 @@ export default async function AssetDetailPage({
   const asset = (await getAsset(id)) as AssetRecord;
   const repairs = asset.repairs ?? [];
   const alerts = asset.alerts ?? [];
+  const isWorkstationAsset = asset.assetScope === "Workstation Device" || asset.workstationAssignments.some((assignment) => assignment.isActive);
+  const activeAssignment = asset.workstationAssignments.find((assignment) => assignment.isActive) ?? asset.workstationAssignments[0];
+  const currentLocation =
+    asset.currentLocationDisplay ??
+    asset.displayLocation ??
+    (isWorkstationAsset
+      ? [asset.workstationCode ?? activeAssignment?.workstation.code, asset.side].filter(Boolean).join(" / ")
+      : asset.generalLocation ?? asset.currentLocation) ??
+    "Not recorded";
+  const assignmentSectionTitle = isWorkstationAsset ? "Assignment history" : "Location history";
 
   return (
     <div className="space-y-5">
@@ -168,8 +187,9 @@ export default async function AssetDetailPage({
               <p className="mt-2 text-sm text-[var(--muted)]">
                 {asset.brand} {asset.model}
               </p>
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <StatusBadge value={asset.status} />
+                {asset.assetScope ? <StatusBadge value={asset.assetScope} tone="info" /> : null}
               </div>
             </div>
           </div>
@@ -193,6 +213,26 @@ export default async function AssetDetailPage({
             />
           </div>
         </div>
+
+        <div className="relative mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {[
+            { label: "Asset Code", value: asset.assetCode },
+            { label: "Type", value: asset.assetType.name },
+            { label: "Status", value: asset.status.replaceAll("_", " ") },
+            { label: "Asset Scope", value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device") },
+            { label: "Current Location", value: currentLocation }
+          ].map((item) => (
+            <div
+              key={item.label}
+              className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4"
+            >
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                {item.label}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-[var(--text)]">{item.value}</p>
+            </div>
+          ))}
+        </div>
       </section>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
@@ -203,13 +243,17 @@ export default async function AssetDetailPage({
               { label: "Status", value: <StatusBadge value={asset.status} /> },
               { label: "Brand / Model", value: `${asset.brand} ${asset.model}` },
               { label: "Serial number", value: asset.serialNumber },
-              { label: "Specification", value: asset.specification || "Not recorded" },
               {
                 label: "Purchase date",
-                value: asset.purchaseDate
-                  ? new Date(asset.purchaseDate).toLocaleDateString()
-                  : "Not recorded"
-              }
+                value: formatDate(asset.purchaseDate)
+              },
+              { label: "Warranty Expiry Date", value: asset.warrantyExpiryDate ?? "Not recorded" },
+              {
+                label: "Asset Scope",
+                value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device")
+              },
+              { label: "General Location", value: asset.generalLocation ?? "Not recorded" },
+              { label: "Specific Location / Notes", value: asset.specificLocationNotes ?? "Not recorded" }
             ].map((item) => (
               <div
                 key={item.label}
@@ -224,9 +268,50 @@ export default async function AssetDetailPage({
           </div>
         </SectionCard>
 
-        <SectionCard title="Assignment history">
-          {asset.workstationAssignments.length > 0 ? (
-            <DataTable headers={["Workstation", "Assignment type", "Assigned date", "Removed", "Active"]}>
+        <SectionCard title="Current assignment / location">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {isWorkstationAsset ? (
+              <>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Flow</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.flow ?? "Not recorded"}</p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Workstation</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">
+                    {asset.workstationCode ?? activeAssignment?.workstation.code ?? "Not recorded"}
+                  </p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Side</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.side ?? "Not recorded"}</p>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Asset Scope</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">
+                    {asset.assetScope ?? "Other / Non-Workstation Device"}
+                  </p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">General Location</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.generalLocation ?? currentLocation}</p>
+                </div>
+                <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4 md:col-span-2 xl:col-span-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Specific Location / Notes</p>
+                  <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.specificLocationNotes ?? "Not recorded"}</p>
+                </div>
+              </>
+            )}
+          </div>
+        </SectionCard>
+      </div>
+
+      <SectionCard title={assignmentSectionTitle}>
+        {asset.workstationAssignments.length > 0 ? (
+          <DataTable headers={["Workstation", "Assignment type", "Assigned date", "Removed", "Active"]}>
               {asset.workstationAssignments.map((assignment, index) => (
                 <tr
                   key={assignment.id}
@@ -254,15 +339,18 @@ export default async function AssetDetailPage({
                   </td>
                 </tr>
               ))}
-            </DataTable>
-          ) : (
-            <EmptyState
-              title="No assignment history yet"
-              message="This asset has not been assigned to a workstation yet."
-            />
-          )}
-        </SectionCard>
-      </div>
+          </DataTable>
+        ) : (
+          <EmptyState
+            title={isWorkstationAsset ? "No assignment history yet" : "No location history yet"}
+            message={
+              isWorkstationAsset
+                ? "No workstation assignment history has been recorded for this asset yet."
+                : "No location history has been recorded for this asset yet. Update its assignment when it is moved."
+            }
+          />
+        )}
+      </SectionCard>
 
       <SectionCard title="Repair history">
         {repairs.length > 0 ? (
@@ -277,7 +365,7 @@ export default async function AssetDetailPage({
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge value={repair.status} />
                       <span className="rounded-full bg-[var(--panel-strong)] px-3 py-1 text-xs font-medium text-[var(--muted)]">
-                        {new Date(repair.reportedDate).toLocaleDateString()}
+                        {formatDate(repair.reportedDate)}
                       </span>
                       <span className="rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-[var(--nav)]">
                         {repair.workstation.code}
@@ -299,7 +387,7 @@ export default async function AssetDetailPage({
                         </p>
                         <p className="mt-1 text-sm text-[var(--text)]">
                           {repair.expectedReturnDate
-                            ? new Date(repair.expectedReturnDate).toLocaleDateString()
+                            ? formatDate(repair.expectedReturnDate)
                             : "Not set"}
                         </p>
                       </div>
@@ -309,7 +397,7 @@ export default async function AssetDetailPage({
                         </p>
                         <p className="mt-1 text-sm text-[var(--text)]">
                           {repair.actualReturnDate
-                            ? new Date(repair.actualReturnDate).toLocaleDateString()
+                            ? formatDate(repair.actualReturnDate)
                             : "-"}
                         </p>
                       </div>
@@ -328,7 +416,7 @@ export default async function AssetDetailPage({
         ) : (
           <EmptyState
             title="No repair history"
-            message="No repair records have been logged for this asset yet."
+            message="No repair records have been logged yet. Use Log Repair to create the first repair entry."
           />
         )}
       </SectionCard>
@@ -341,7 +429,7 @@ export default async function AssetDetailPage({
         ) : (
           <EmptyState
             title="No active alerts"
-            message="There are currently no alerts linked to this asset."
+            message="There are currently no alerts linked to this asset record."
           />
         )}
       </SectionCard>

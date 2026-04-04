@@ -1,4 +1,5 @@
 import { AlertCard } from "@/components/ui/alert-card";
+import { AlertsFilters } from "@/components/alerts/alerts-filters";
 import { PageHeader } from "@/components/ui/page-header";
 import { getAlerts } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
@@ -16,6 +17,14 @@ export default async function AlertsPage({
   appendQueryParam(query, "priority", params?.priority);
 
   const alerts = (await getAlerts(query.toString() ? `?${query.toString()}` : "")) as AlertRecord[];
+  const allAlerts = (await getAlerts()) as AlertRecord[];
+  const totalAlerts = allAlerts.length;
+  const highPriorityAlerts = allAlerts.filter((alert) => alert.priority === "HIGH").length;
+  const unreadAlerts = allAlerts.filter((alert) => alert.status === "NEW").length;
+  const groupedAlerts = ["HIGH", "MEDIUM", "LOW"].map((priority) => ({
+    priority,
+    items: alerts.filter((alert) => alert.priority === priority)
+  })).filter((group) => group.items.length > 0);
 
   return (
     <div className="space-y-5">
@@ -24,38 +33,47 @@ export default async function AlertsPage({
         description="Automatic reminders for overdue repairs, machines sent for repair, active replacements, returned originals, incomplete records, and repeated repair patterns."
       />
 
-      <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
-        <form className="grid gap-4 md:grid-cols-3">
-          <select
-            name="status"
-            defaultValue={typeof params?.status === "string" ? params.status : ""}
-            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
-          >
-            <option value="">All statuses</option>
-            <option value="NEW">New</option>
-            <option value="READ">Read</option>
-            <option value="RESOLVED">Resolved</option>
-          </select>
-          <select
-            name="priority"
-            defaultValue={typeof params?.priority === "string" ? params.priority : ""}
-            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
-          >
-            <option value="">All priorities</option>
-            <option value="HIGH">High</option>
-            <option value="MEDIUM">Medium</option>
-            <option value="LOW">Low</option>
-          </select>
-          <button className="rounded-2xl bg-[var(--nav)] px-5 py-3 text-sm font-semibold text-white">
-            Apply filters
-          </button>
-        </form>
+      <div className="grid gap-4 md:grid-cols-3">
+        <div className="rounded-[1.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.94))] px-5 py-4 shadow-[0_18px_45px_rgba(24,49,83,0.07)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Total alerts</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--nav)]">{totalAlerts}</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.94))] px-5 py-4 shadow-[0_18px_45px_rgba(24,49,83,0.07)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">High priority</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--nav)]">{highPriorityAlerts}</p>
+        </div>
+        <div className="rounded-[1.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.94))] px-5 py-4 shadow-[0_18px_45px_rgba(24,49,83,0.07)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">Unread alerts</p>
+          <p className="mt-2 text-2xl font-semibold text-[var(--nav)]">{unreadAlerts}</p>
+        </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {alerts.map((alert) => (
-          <AlertCard key={alert.id} alert={alert} />
+      <AlertsFilters />
+
+      <div className="space-y-6">
+        {groupedAlerts.map((group) => (
+          <section key={group.priority} className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+                {group.priority} priority
+              </h2>
+              <span className="rounded-full bg-[var(--panel-strong)] px-3 py-1 text-xs font-semibold text-[var(--nav)]">
+                {group.items.length}
+              </span>
+            </div>
+            <div className="grid gap-4 xl:grid-cols-2">
+              {group.items.map((alert) => (
+                <AlertCard key={alert.id} alert={alert} showActions />
+              ))}
+            </div>
+          </section>
         ))}
+        {alerts.length === 0 ? (
+          <div className="rounded-[1.5rem] border border-dashed border-[var(--border)] bg-white/60 px-5 py-10 text-center">
+            <p className="text-sm font-semibold text-[var(--nav)]">No alerts match your filters</p>
+            <p className="mt-2 text-sm text-[var(--muted)]">Try changing the status or priority filters.</p>
+          </div>
+        ) : null}
       </div>
     </div>
   );

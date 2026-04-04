@@ -3,13 +3,17 @@ export function StatCard({
   value,
   icon,
   badge = "Live",
-  tone = "navy"
+  tone = "navy",
+  compact = false,
+  interactive = false
 }: {
   label: string;
   value: number | string;
   icon?: React.ReactNode;
   badge?: string;
   tone?: "navy" | "amber" | "emerald" | "rose";
+  compact?: boolean;
+  interactive?: boolean;
 }) {
   const toneStyles = {
     navy: "from-slate-900 via-[var(--nav)] to-slate-800 text-white",
@@ -19,7 +23,13 @@ export function StatCard({
   };
 
   return (
-    <div className="group relative flex h-full min-h-[216px] flex-col justify-between overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.96))] p-6 shadow-[0_20px_60px_rgba(24,49,83,0.10)] transition duration-300 hover:-translate-y-1 hover:scale-[1.015] hover:shadow-[0_32px_90px_rgba(24,49,83,0.16)]">
+    <div
+      className={`group relative flex h-full flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.96))] shadow-[0_20px_60px_rgba(24,49,83,0.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_32px_90px_rgba(24,49,83,0.16)] ${
+        compact ? "min-h-[150px] justify-start p-5 hover:scale-[1.01]" : "min-h-[216px] justify-between p-6 hover:scale-[1.015]"
+      } ${
+        interactive ? "cursor-pointer hover:border-[#d7c2a6]" : ""
+      }`}
+    >
       <div className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-[var(--accent)] via-[var(--nav)] to-transparent" />
       <div className="absolute -right-8 top-10 h-24 w-24 rounded-full bg-[var(--accent)]/10 blur-2xl transition duration-300 group-hover:bg-[var(--accent)]/15" />
       <div className="absolute -left-4 bottom-4 h-16 w-16 rounded-full bg-[var(--nav)]/8 blur-2xl" />
@@ -34,16 +44,17 @@ export function StatCard({
         </div>
       </div>
 
-      <div className="relative flex flex-1 flex-col items-center justify-center px-1 py-6 text-center">
-        <p className="text-[2.35rem] font-semibold tracking-tight text-[var(--text)] lg:text-[2.55rem]">{value}</p>
-        <p className="mt-2 max-w-[12rem] text-sm font-medium leading-6 text-[var(--muted)]">{label}</p>
-      </div>
-
-      <div className="relative pt-4 text-center">
-        <div className="mx-auto mb-4 h-px w-full max-w-[11rem] bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
-        <span className="inline-flex rounded-full border border-[var(--border)] bg-[var(--panel-strong)] px-3 py-1 text-xs font-semibold text-[var(--nav)] shadow-sm">
-          {badge}
-        </span>
+      <div
+        className={`relative flex flex-1 flex-col items-center px-1 text-center ${
+          compact ? "justify-center py-4" : "justify-center py-6"
+        }`}
+      >
+        <p className={`font-semibold tracking-tight text-[var(--text)] ${compact ? "text-[2rem]" : "text-[2.35rem] lg:text-[2.55rem]"}`}>
+          {value}
+        </p>
+        <p className={`mt-2 max-w-[12rem] font-medium leading-6 text-[var(--muted)] ${compact ? "text-[13px]" : "text-sm"}`}>
+          {label}
+        </p>
       </div>
     </div>
   );

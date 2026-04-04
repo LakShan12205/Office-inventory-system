@@ -13,6 +13,14 @@ type AssetPageRecord = {
   serialNumber?: string | null;
   status?: string;
   currentLocation?: string | null;
+  currentLocationDisplay?: string | null;
+  displayLocation?: string | null;
+  assetScope?: string | null;
+  generalLocation?: string | null;
+  specificLocationNotes?: string | null;
+  flow?: string | null;
+  side?: string | null;
+  workstationCode?: string | null;
   assetType?: {
     id?: string;
     name?: string;
@@ -85,6 +93,29 @@ const TYPE_OPTIONS = [
   { label: "TV", value: "TV" },
   { label: "Cable", value: "Cable" },
   { label: "Peripheral", value: "Peripheral" }
+];
+
+const LOCATION_OPTIONS = [
+  {
+    label: "Workstations",
+    options: Array.from({ length: 12 }, (_, index) => {
+      const code = `WS-${String(index + 1).padStart(2, "0")}`;
+      return { label: code, value: code };
+    })
+  },
+  {
+    label: "Other Locations",
+    options: [
+      { label: "Ground Floor", value: "Ground Floor" },
+      { label: "1st Flow", value: "1st Flow" },
+      { label: "2nd Flow", value: "2nd Flow" },
+      { label: "3rd Flow", value: "3rd Flow" },
+      { label: "Meeting Room", value: "Meeting Room" },
+      { label: "Admin Office", value: "Admin Office" },
+      { label: "Reception", value: "Reception" },
+      { label: "Store", value: "Store" }
+    ]
+  }
 ];
 
 function PlusIcon() {
@@ -350,12 +381,22 @@ export default async function AssetsPage({
             <option value="IN_STORE">In Store</option>
             <option value="DAMAGED">Damaged</option>
           </select>
-          <input
+          <select
             name="location"
             defaultValue={typeof params?.location === "string" ? params.location : ""}
-            placeholder="Location / workstation"
             className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
-          />
+          >
+            <option value="">All locations</option>
+            {LOCATION_OPTIONS.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
           <div className="flex gap-3">
             <button className="flex-1 rounded-2xl bg-[var(--nav)] px-5 py-3 font-semibold text-white shadow-[0_14px_30px_rgba(24,49,83,0.18)] transition hover:bg-[#214067]">
               Filter
@@ -419,11 +460,17 @@ export default async function AssetsPage({
             ]}
           >
             {assets.map((asset, index) => {
-              const workstationCode =
-                asset.workstationAssignments?.[0]?.workstation?.code ??
-                asset.workstation?.code ??
-                asset.currentLocation ??
-                "Store";
+              const displayLocation =
+                asset.currentLocationDisplay ??
+                asset.displayLocation ??
+                (asset.workstationCode && asset.side
+                  ? `${asset.workstationCode} / ${asset.side}`
+                  : asset.workstationCode ??
+                    asset.generalLocation ??
+                    asset.currentLocation ??
+                    asset.workstationAssignments?.[0]?.workstation?.code ??
+                    asset.workstation?.code ??
+                    "Store");
               const href = `/assets/${asset.id}`;
 
               return (
@@ -454,7 +501,7 @@ export default async function AssetsPage({
                     </Link>
                   </td>
                   <td className="px-4 py-4 text-sm text-[var(--muted)]">
-                    <Link href={href}>{workstationCode}</Link>
+                    <Link href={href}>{displayLocation}</Link>
                   </td>
                 </tr>
               );
