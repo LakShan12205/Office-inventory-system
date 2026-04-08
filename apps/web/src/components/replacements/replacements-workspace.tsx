@@ -4,48 +4,22 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatCard } from "@/components/ui/stat-card";
+import {
+  FlowCode,
+  getAssetFlowCode,
+  getAssetLocationLabel,
+  getAssignmentGeneralLocation,
+  getAssignmentWorkstationCode,
+  getWorkstationCodesForFlow,
+  isCurrentWorkstationAsset,
+  matchesAssetTypeFilter,
+  normalizeFlowCode,
+  normalizeSearchText
+} from "@/lib/asset-mapping";
+import { getReplacementOperationalStatus } from "@/lib/replacement-mapping";
 import { AssetRecord, ReplacementRecord } from "@/lib/types";
 
-type FlowCode = "Flow-01" | "Flow-02";
 type ReplacementSource = "WORKSTATION_DEVICE" | "OTHER_DEVICE";
-
-function getFlowWorkstations(flowCode: FlowCode) {
-  return flowCode === "Flow-01"
-    ? ["WS-07", "WS-08", "WS-09", "WS-10", "WS-11", "WS-12"]
-    : ["WS-01", "WS-02", "WS-03", "WS-04", "WS-05", "WS-06"];
-}
-
-function getFlowCodeFromWorkstationCode(workstationCode: string): FlowCode {
-  const numericCode = Number(workstationCode.split("-")[1]);
-  return numericCode >= 7 ? "Flow-01" : "Flow-02";
-}
-
-function assetLocationLabel(asset: AssetRecord) {
-  return (
-    asset.currentLocationDisplay ??
-    asset.displayLocation ??
-    asset.generalLocation ??
-    asset.currentLocation ??
-    asset.workstationCode ??
-    asset.workstationAssignments.find((assignment) => assignment.isActive)?.workstation.code ??
-    "Not recorded"
-  );
-}
-
-function isWorkstationDevice(asset: AssetRecord) {
-  return (
-    asset.assetScope === "Workstation Device" ||
-    asset.workstationAssignments.some((assignment) => assignment.isActive)
-  );
-}
-
-function getReplacementRecordStatus(record: ReplacementRecord) {
-  const expected = record.repair?.expectedReturnDate;
-  if (record.isReturned) return "RETURNED";
-  if (record.replacementType === "PERMANENT") return "PERMANENT";
-  if (expected && new Date(expected) < new Date()) return "OVERDUE";
-  return "ACTIVE";
-}
 
 function SwapIcon() {
   return (
@@ -111,31 +85,28 @@ export function ReplacementsWorkspace({
 
   const filtered = useMemo(() => {
     return inventoryCandidates.filter((asset) => {
-      const activeAssignment = asset.workstationAssignments.find((assignment) => assignment.isActive);
-      const assetSourceType = isWorkstationDevice(asset) ? "WORKSTATION_DEVICE" : "OTHER_DEVICE";
-      const assetFlow =
-        asset.flow ??
-        (activeAssignment?.workstation.code
-          ? getFlowCodeFromWorkstationCode(activeAssignment.workstation.code)
-          : "");
-      const assetWorkstation = asset.workstationCode ?? activeAssignment?.workstation.code ?? "";
+      const assetSourceType = isCurrentWorkstationAsset(asset)
+        ? "WORKSTATION_DEVICE"
+        : "OTHER_DEVICE";
+      const assetFlow = getAssetFlowCode(asset);
+      const assetWorkstation = getAssignmentWorkstationCode(asset) ?? "";
       const assetDeviceType = asset.assetType.name;
-      const assetLocation = assetLocationLabel(asset);
-      const assetGeneralLocation =
-        asset.generalLocation ?? asset.currentLocationDisplay ?? asset.currentLocation ?? "";
+      const assetLocation = getAssetLocationLabel(asset);
+      const assetGeneralLocation = getAssignmentGeneralLocation(asset) ?? "";
 
       const matchesSource = assetSourceType === assetSource;
-      const matchesFlow = assetSource === "WORKSTATION_DEVICE" ? !flow || assetFlow === flow : true;
+      const matchesFlow =
+        assetSource === "WORKSTATION_DEVICE" ? !flow || assetFlow === normalizeFlowCode(flow) : true;
       const matchesWorkstation =
         assetSource === "WORKSTATION_DEVICE"
           ? !workstation || assetWorkstation === workstation
           : true;
-      const matchesDeviceType = !deviceType || assetDeviceType === deviceType;
+      const matchesDeviceType = matchesAssetTypeFilter(assetDeviceType, deviceType);
       const matchesGeneralLocation =
         assetSource === "OTHER_DEVICE"
           ? !generalLocation || assetGeneralLocation === generalLocation
           : true;
-      const query = search.trim().toLowerCase();
+      const query = normalizeSearchText(search);
       const matchesSearch =
         !query ||
         [
@@ -150,7 +121,7 @@ export function ReplacementsWorkspace({
           assetLocation
         ]
           .filter(Boolean)
-          .some((value) => value!.toLowerCase().includes(query));
+          .some((value) => String(value).toLowerCase().includes(query));
 
       return (
         matchesSource &&
@@ -165,13 +136,13 @@ export function ReplacementsWorkspace({
 
   const visibleAssets =
     assetSource === "WORKSTATION_DEVICE"
-      ? flow && workstation
+      ? flow
         ? filtered
         : []
       : filtered;
 
   const workstationOptions = flow
-    ? getFlowWorkstations(flow as FlowCode)
+    ? getWorkstationCodesForFlow(normalizeFlowCode(flow) as FlowCode)
     : [
         "WS-01",
         "WS-02",
@@ -190,10 +161,13 @@ export function ReplacementsWorkspace({
   const generalLocationOptions = Array.from(
     new Set(
       inventoryCandidates
-        .filter((asset) => !isWorkstationDevice(asset))
+        .filter((asset) => !isCurrentWorkstationAsset(asset))
         .map(
           (asset) =>
-            asset.generalLocation ?? asset.currentLocationDisplay ?? asset.currentLocation ?? ""
+            getAssignmentGeneralLocation(asset) ??
+            asset.currentLocationDisplay ??
+            asset.currentLocation ??
+            ""
         )
         .filter(Boolean)
     )
@@ -204,10 +178,10 @@ export function ReplacementsWorkspace({
   ).sort((a, b) => a.localeCompare(b));
   const replacementSummary = useMemo(
     () => ({
-      active: replacements.filter((record) => getReplacementRecordStatus(record) === "ACTIVE").length,
-      returned: replacements.filter((record) => getReplacementRecordStatus(record) === "RETURNED").length,
-      permanent: replacements.filter((record) => getReplacementRecordStatus(record) === "PERMANENT").length,
-      overdue: replacements.filter((record) => getReplacementRecordStatus(record) === "OVERDUE").length
+      active: replacements.filter((record) => getReplacementOperationalStatus(record) === "ACTIVE").length,
+      returned: replacements.filter((record) => getReplacementOperationalStatus(record) === "RETURNED").length,
+      permanent: replacements.filter((record) => getReplacementOperationalStatus(record) === "PERMANENT").length,
+      overdue: replacements.filter((record) => getReplacementOperationalStatus(record) === "OVERDUE").length
     }),
     [replacements]
   );
@@ -423,7 +397,7 @@ export function ReplacementsWorkspace({
               </div>
             ) : (
               <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
-                Select a workstation to load its assigned inventory assets.
+                Select a workstation to narrow the results further, or choose from all assets in this flow.
               </div>
             )}
           </div>
@@ -494,7 +468,7 @@ export function ReplacementsWorkspace({
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-3 shadow-sm">
         <div className="space-y-2">
           {visibleAssets.map((asset) => {
-            const locationLabel = assetLocationLabel(asset);
+            const locationLabel = getAssetLocationLabel(asset);
 
             return (
               <button

@@ -162,7 +162,13 @@ export default async function AssetDetailPage({
     asset.currentLocationDisplay ??
     asset.displayLocation ??
     (isWorkstationAsset
-      ? [asset.workstationCode ?? activeAssignment?.workstation.code, asset.side].filter(Boolean).join(" / ")
+      ? [
+          asset.workstationCode ?? activeAssignment?.workstation?.code,
+          asset.side,
+          asset.position
+        ]
+          .filter(Boolean)
+          .join(" / ")
       : asset.generalLocation ?? asset.currentLocation) ??
     "Not recorded";
   const assignmentSectionTitle = isWorkstationAsset ? "Assignment history" : "Location history";
@@ -196,7 +202,7 @@ export default async function AssetDetailPage({
 
           <div className="flex flex-wrap gap-3">
             <ActionButton
-              href={`/assets?search=${encodeURIComponent(asset.assetCode)}`}
+              href={`/assets/${asset.id}/edit`}
               label="Edit Asset"
               icon={<PencilIcon />}
             />
@@ -279,13 +285,19 @@ export default async function AssetDetailPage({
                 <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Workstation</p>
                   <p className="mt-2 text-sm font-semibold text-[var(--text)]">
-                    {asset.workstationCode ?? activeAssignment?.workstation.code ?? "Not recorded"}
+                    {asset.workstationCode ?? activeAssignment?.workstation?.code ?? "Not recorded"}
                   </p>
                 </div>
                 <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Side</p>
                   <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.side ?? "Not recorded"}</p>
                 </div>
+                {asset.position ? (
+                  <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">Position</p>
+                    <p className="mt-2 text-sm font-semibold text-[var(--text)]">{asset.position}</p>
+                  </div>
+                ) : null}
               </>
             ) : (
               <>
@@ -318,7 +330,7 @@ export default async function AssetDetailPage({
                   className={index % 2 === 0 ? "bg-white" : "bg-[#fcf8f1]"}
                 >
                   <td className="px-4 py-4 text-sm font-medium text-[var(--nav)]">
-                    {assignment.workstation.code}
+                    {assignment.workstation?.code ?? assignment.generalLocation ?? "General location"}
                   </td>
                   <td className="px-4 py-4 text-sm">
                     <StatusBadge

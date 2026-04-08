@@ -29,14 +29,17 @@ export const workstationStatusSchema = z.enum([
 
 export const assetStatusSchema = z.enum([
   "ACTIVE",
-  "IN_REPAIR",
   "IN_STORE",
+  "IN_REPAIR",
   "TEMPORARY_REPLACEMENT",
   "DAMAGED",
-  "RETIRED"
+  "RETIRED",
+  "ARCHIVED"
 ]);
 
+export const assetScopeSchema = z.enum(["WORKSTATION_DEVICE", "OTHER_NON_WORKSTATION_DEVICE"]);
 export const assignmentTypeSchema = z.enum(["PRIMARY", "TEMPORARY_REPLACEMENT", "SPARE"]);
+export const assignmentStatusSchema = z.enum(["ACTIVE", "INACTIVE"]);
 export const repairTypeSchema = z.enum(["ON_SITE", "SENT_TO_SHOP"]);
 export const repairStatusSchema = z.enum(["REPORTED", "SENT", "IN_PROGRESS", "RETURNED", "CLOSED"]);
 export const replacementStatusSchema = z.enum(["ACTIVE", "REMOVED", "PENDING_RESTORE"]);
@@ -52,13 +55,15 @@ export const workstationQuerySchema = z.object({
 export const assetQuerySchema = z.object({
   search: optionalTrimmedString,
   type: optionalTrimmedString,
+  location: optionalTrimmedString,
   status: optionalEnumValue([
     "ACTIVE",
-    "IN_REPAIR",
     "IN_STORE",
+    "IN_REPAIR",
     "TEMPORARY_REPLACEMENT",
     "DAMAGED",
-    "RETIRED"
+    "RETIRED",
+    "ARCHIVED"
   ])
 });
 
@@ -90,8 +95,24 @@ export const assetPayloadSchema = z.object({
   serialNumber: z.string().trim().min(1),
   specification: z.string().trim().optional().nullable(),
   purchaseDate: z.string().datetime().optional().nullable(),
+  warrantyExpiryDate: z.string().datetime().optional().nullable(),
   status: assetStatusSchema,
+  assetScope: assetScopeSchema.optional().nullable(),
   currentLocation: z.string().trim().optional().nullable(),
+  invoiceFileName: z.string().trim().optional().nullable(),
+  invoiceFileUrl: z.string().trim().optional().nullable(),
+  assignment: z
+    .object({
+      workstationCode: z.string().trim().optional().nullable(),
+      generalLocation: z.string().trim().optional().nullable(),
+      specificLocationNotes: z.string().trim().optional().nullable(),
+      side: z.string().trim().optional().nullable(),
+      position: z.string().trim().optional().nullable(),
+      status: assignmentStatusSchema.optional(),
+      startDate: z.string().datetime().optional()
+    })
+    .optional()
+    .nullable(),
   notes: z.string().trim().optional().nullable()
 });
 
@@ -103,7 +124,7 @@ export const workstationAssignmentPayloadSchema = z.object({
 });
 
 export const repairPayloadSchema = z.object({
-  workstationId: z.string().trim().min(1),
+  workstationId: z.string().trim().min(1).optional().nullable(),
   assetId: z.string().trim().min(1),
   reportedDate: z.string().datetime(),
   faultDescription: z.string().trim().min(5),
@@ -131,14 +152,13 @@ export const repairUpdateSchema = repairPayloadSchema.partial().extend({
 });
 
 export const replacementPayloadSchema = z.object({
-  repairId: z.string().trim().min(1),
   originalAssetId: z.string().trim().min(1),
   replacementAssetId: z.string().trim().min(1),
-  workstationId: z.string().trim().min(1),
+  replacementType: z.enum(["TEMPORARY", "PERMANENT"]),
   replacementDate: z.string().datetime(),
-  replacementReturnDate: z.string().datetime().optional().nullable(),
-  status: replacementStatusSchema,
-  notes: z.string().trim().optional().nullable()
+  reason: z.enum(["DUE_TO_ONGOING_REPAIR", "NOT_WORKING", "OTHER"]),
+  customReason: z.string().trim().optional().nullable(),
+  workstationId: z.string().trim().optional().nullable()
 });
 
 export const alertUpdateSchema = z.object({

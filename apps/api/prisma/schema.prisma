@@ -16,17 +16,28 @@ enum WorkstationStatus {
 
 enum AssetStatus {
   ACTIVE
-  IN_REPAIR
   IN_STORE
+  IN_REPAIR
   TEMPORARY_REPLACEMENT
   DAMAGED
   RETIRED
+  ARCHIVED
+}
+
+enum AssetScope {
+  WORKSTATION_DEVICE
+  OTHER_NON_WORKSTATION_DEVICE
 }
 
 enum AssignmentType {
   PRIMARY
   TEMPORARY_REPLACEMENT
   SPARE
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum RepairType {
@@ -110,8 +121,12 @@ model Asset {
   serialNumber          String             @unique
   specification         String?
   purchaseDate          DateTime?
+  warrantyExpiryDate    DateTime?
   status                AssetStatus        @default(IN_STORE)
+  assetScope            AssetScope?
   currentLocation       String?
+  invoiceFileName       String?
+  invoiceFileUrl        String?
   notes                 String?
   workstationAssignments WorkstationAsset[]
   repairs               Repair[]
@@ -128,11 +143,18 @@ model Asset {
 
 model WorkstationAsset {
   id              String         @id @default(cuid())
-  workstationId   String
+  workstationId   String?
   assetId         String
-  workstation     Workstation    @relation(fields: [workstationId], references: [id])
+  workstation     Workstation?   @relation(fields: [workstationId], references: [id])
   asset           Asset          @relation(fields: [assetId], references: [id])
   assignmentType  AssignmentType @default(PRIMARY)
+  status          AssignmentStatus @default(ACTIVE)
+  generalLocation String?
+  specificLocationNotes String?
+  side            String?
+  position        String?
+  startDate       DateTime       @default(now())
+  endDate         DateTime?
   assignedDate    DateTime       @default(now())
   unassignedDate  DateTime?
   isActive        Boolean        @default(true)
@@ -141,7 +163,10 @@ model WorkstationAsset {
   updatedAt       DateTime       @updatedAt
 
   @@index([workstationId, isActive])
+  @@index([workstationId, status])
   @@index([assetId, isActive])
+  @@index([assetId, status])
+  @@index([generalLocation, status])
 }
 
 model Repair {

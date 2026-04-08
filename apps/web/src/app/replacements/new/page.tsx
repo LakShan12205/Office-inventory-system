@@ -1,7 +1,7 @@
 import { ReplacementFormView, ReplacementInitialContext } from "@/components/replacements/replacement-form-view";
 import { PageHeader } from "@/components/ui/page-header";
-import { getAssets, getReplacements } from "@/lib/api";
-import { AssetRecord, ReplacementRecord } from "@/lib/types";
+import { getAssets } from "@/lib/api";
+import { AssetRecord } from "@/lib/types";
 
 function normalizeAssets(input: unknown): AssetRecord[] {
   if (Array.isArray(input)) return input as AssetRecord[];
@@ -18,10 +18,7 @@ export default async function NewReplacementPage({
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const [replacements, assets] = await Promise.all([
-    getReplacements() as Promise<ReplacementRecord[]>,
-    getAssets("?pageSize=500")
-  ]);
+  const assets = await getAssets("?pageSize=500");
 
   const toSingle = (value: string | string[] | undefined) =>
     typeof value === "string" && value.trim() ? value : undefined;
@@ -48,7 +45,6 @@ export default async function NewReplacementPage({
         description="Review the selected damaged device, choose an eligible replacement asset from inventory, and save the replacement record."
       />
       <ReplacementFormView
-        replacements={replacements}
         assets={normalizeAssets(assets)}
         initialContext={initialContext}
       />

@@ -1,13 +1,6 @@
 import Link from "next/link";
+import { getReplacementOperationalStatus } from "@/lib/replacement-mapping";
 import { ReplacementRecord } from "@/lib/types";
-
-function getReplacementRecordStatus(record: ReplacementRecord) {
-  const expected = record.repair?.expectedReturnDate;
-  if (record.isReturned) return "RETURNED";
-  if (record.replacementType === "PERMANENT") return "PERMANENT";
-  if (expected && new Date(expected) < new Date()) return "OVERDUE";
-  return "ACTIVE";
-}
 
 function formatDate(value: string | null | undefined) {
   if (!value) return "Not set";
@@ -38,13 +31,13 @@ export function ReplacementRecordsList({
 }) {
   const normalizedFilter = statusFilter?.trim().toLowerCase();
   const normalizedQuery = searchQuery?.trim().toLowerCase() ?? "";
-  const activeCount = records.filter((record) => getReplacementRecordStatus(record) === "ACTIVE").length;
-  const returnedCount = records.filter((record) => getReplacementRecordStatus(record) === "RETURNED").length;
-  const permanentCount = records.filter((record) => getReplacementRecordStatus(record) === "PERMANENT").length;
-  const overdueCount = records.filter((record) => getReplacementRecordStatus(record) === "OVERDUE").length;
+  const activeCount = records.filter((record) => getReplacementOperationalStatus(record) === "ACTIVE").length;
+  const returnedCount = records.filter((record) => getReplacementOperationalStatus(record) === "RETURNED").length;
+  const permanentCount = records.filter((record) => getReplacementOperationalStatus(record) === "PERMANENT").length;
+  const overdueCount = records.filter((record) => getReplacementOperationalStatus(record) === "OVERDUE").length;
 
   const filteredRecords = records.filter((record) => {
-    const operationalStatus = getReplacementRecordStatus(record).toLowerCase();
+    const operationalStatus = getReplacementOperationalStatus(record).toLowerCase();
     const matchesStatus = !normalizedFilter || normalizedFilter === "all" || operationalStatus === normalizedFilter;
     const matchesQuery =
       !normalizedQuery ||
@@ -168,7 +161,7 @@ export function ReplacementRecordsList({
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-3 shadow-sm">
         <div className="space-y-2">
           {filteredRecords.map((record) => {
-            const operationalStatus = getReplacementRecordStatus(record);
+            const operationalStatus = getReplacementOperationalStatus(record);
 
             return (
               <Link

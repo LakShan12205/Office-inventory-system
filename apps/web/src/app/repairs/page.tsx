@@ -20,12 +20,34 @@ type RepairPageRecord = {
     code: string;
   };
   replacementLog?: {
+    id: string;
+    status: string;
     replacementAsset: {
       id: string;
       assetCode: string;
     };
   } | null;
 };
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function isOverdueRepair(repair: RepairPageRecord) {
+  if (!repair.expectedReturnDate) return false;
+  if (repair.status === "CLOSED" || repair.status === "RETURNED") return false;
+  return new Date(repair.expectedReturnDate) < startOfToday();
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not set";
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric"
+  });
+}
 
 export default async function RepairsPage({
   searchParams
@@ -41,6 +63,39 @@ export default async function RepairsPage({
     query.toString() ? `?${query.toString()}` : ""
   )) as RepairPageRecord[];
 
+  const summaryCards = [
+    {
+      label: "Total Repairs",
+      value: repairs.length,
+      description: "All repair records in the current result set."
+    },
+    {
+      label: "In Progress Repairs",
+      value: repairs.filter((repair) => repair.status === "IN_PROGRESS").length,
+      description: "Repairs currently being worked on."
+    },
+    {
+      label: "Returned Repairs",
+      value: repairs.filter((repair) => repair.status === "RETURNED").length,
+      description: "Repairs marked as returned from service."
+    },
+    {
+      label: "Overdue Repairs",
+      value: repairs.filter(isOverdueRepair).length,
+      description: "Expected return date has passed without closure."
+    },
+    {
+      label: "Repairs With Active Replacement",
+      value: repairs.filter((repair) => repair.replacementLog?.status === "ACTIVE").length,
+      description: "Repairs currently supported by an active replacement."
+    },
+    {
+      label: "Closed Repairs",
+      value: repairs.filter((repair) => repair.status === "CLOSED").length,
+      description: "Repairs fully closed out."
+    }
+  ];
+
   return (
     <div className="space-y-5">
       <PageHeader
@@ -55,6 +110,21 @@ export default async function RepairsPage({
           </Link>
         }
       />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+        {summaryCards.map((card) => (
+          <div
+            key={card.label}
+            className="rounded-[1.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.94))] px-5 py-4 shadow-[0_18px_45px_rgba(24,49,83,0.07)]"
+          >
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--muted)]">
+              {card.label}
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--nav)]">{card.value}</p>
+            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{card.description}</p>
+          </div>
+        ))}
+      </div>
 
       <div className="rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm">
         <form className="flex flex-col gap-4 md:flex-row">
@@ -93,7 +163,7 @@ export default async function RepairsPage({
               <td className="px-4 py-4 text-sm font-medium">{repair.asset.assetCode}</td>
               <td className="px-4 py-4 text-sm">{repair.workstation.code}</td>
               <td className="px-4 py-4 text-sm">
-                {new Date(repair.reportedDate).toLocaleDateString()}
+                {formatDate(repair.reportedDate)}
               </td>
               <td className="px-4 py-4 text-sm text-[var(--muted)]">
                 {repair.faultDescription}
@@ -102,9 +172,7 @@ export default async function RepairsPage({
                 <StatusBadge value={repair.status} />
               </td>
               <td className="px-4 py-4 text-sm">
-                {repair.expectedReturnDate
-                  ? new Date(repair.expectedReturnDate).toLocaleDateString()
-                  : "Not set"}
+                {formatDate(repair.expectedReturnDate)}
               </td>
               <td className="px-4 py-4 text-sm">
                 {repair.replacementLog

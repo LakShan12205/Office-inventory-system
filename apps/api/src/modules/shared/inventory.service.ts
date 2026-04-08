@@ -1,9 +1,20 @@
 import createError from "http-errors";
 import { prisma } from "../../db/prisma";
 
+const CURRENT_WORKSTATION_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
+
+const currentWorkstationAssignmentWhere = {
+  isActive: true,
+  status: "ACTIVE" as const,
+  asset: {
+    deletedAt: null,
+    status: { in: [...CURRENT_WORKSTATION_ASSET_STATUSES] }
+  }
+};
+
 const workstationInclude = {
   assets: {
-    where: { isActive: true },
+    where: currentWorkstationAssignmentWhere,
     include: {
       asset: {
         include: {
@@ -54,6 +65,10 @@ const alertInclude = {
   repair: true
 };
 
+const assetAssignmentInclude = {
+  workstation: true
+};
+
 function startOfToday() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -61,6 +76,106 @@ function startOfToday() {
 
 function formatDate(value?: Date | null) {
   return value ? value.toISOString().slice(0, 10) : "";
+}
+
+function flowCodeFromWorkstationCode(code?: string | null) {
+  if (!code) return null;
+  const numeric = Number.parseInt(code.replace(/\D/g, ""), 10);
+
+  if (Number.isNaN(numeric)) return null;
+  if (numeric >= 1 && numeric <= 6) return "2nd Flow";
+  if (numeric >= 7 && numeric <= 12) return "1st Flow";
+  return null;
+}
+
+function assetScopeLabel(scope?: string | null, hasWorkstationAssignment?: boolean) {
+  if (scope === "WORKSTATION_DEVICE") return "Workstation Device";
+  if (scope === "OTHER_NON_WORKSTATION_DEVICE") return "Other / Non-Workstation Device";
+  return hasWorkstationAssignment ? "Workstation Device" : null;
+}
+
+function getActiveAssignment<T extends {
+  workstationId?: string | null;
+  workstation?: { code: string } | null;
+  generalLocation?: string | null;
+  specificLocationNotes?: string | null;
+  side?: string | null;
+  position?: string | null;
+  status?: string | null;
+  isActive?: boolean | null;
+}>(assignments: T[]) {
+  return (
+    assignments.find((assignment) => assignment.status === "ACTIVE") ??
+    assignments.find((assignment) => assignment.isActive) ??
+    assignments[0] ??
+    null
+  );
+}
+
+function displayLocationFromAssignment(assignment?: {
+  workstation?: { code: string } | null;
+  generalLocation?: string | null;
+  specificLocationNotes?: string | null;
+  side?: string | null;
+  position?: string | null;
+} | null) {
+  if (!assignment) return null;
+
+  if (assignment.workstation?.code) {
+    return [assignment.workstation.code, assignment.side, assignment.position].filter(Boolean).join(" / ");
+  }
+
+  return [assignment.specificLocationNotes || assignment.generalLocation, assignment.side, assignment.position]
+    .filter(Boolean)
+    .join(" / ") || null;
+}
+
+function mapAssetRecord<T extends {
+  currentLocation?: string | null;
+  assetScope?: string | null;
+  warrantyExpiryDate?: Date | null;
+  workstationAssignments: Array<{
+    id: string;
+    assignmentType: string;
+    assignedDate: Date;
+    unassignedDate?: Date | null;
+    isActive: boolean;
+    status?: string | null;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
+    workstation?: { id: string; code: string; name: string } | null;
+  }>;
+}>(asset: T) {
+  const activeAssignment = getActiveAssignment(asset.workstationAssignments);
+  const currentLocationDisplay =
+    displayLocationFromAssignment(activeAssignment) ?? asset.currentLocation ?? null;
+
+  return {
+    ...asset,
+    warrantyExpiryDate: asset.warrantyExpiryDate?.toISOString() ?? null,
+    assetScope:
+      assetScopeLabel(asset.assetScope, Boolean(activeAssignment?.workstation?.code)) ?? undefined,
+    currentLocation: currentLocationDisplay,
+    currentLocationDisplay,
+    displayLocation: currentLocationDisplay,
+    workstationCode: activeAssignment?.workstation?.code ?? null,
+    flow:
+      flowCodeFromWorkstationCode(activeAssignment?.workstation?.code) ??
+      activeAssignment?.generalLocation ??
+      null,
+    generalLocation: activeAssignment?.generalLocation ?? null,
+    specificLocationNotes: activeAssignment?.specificLocationNotes ?? null,
+    side: activeAssignment?.side ?? null,
+    position: activeAssignment?.position ?? null,
+    workstationAssignments: asset.workstationAssignments.map((assignment) => ({
+      ...assignment,
+      assignedDate: assignment.assignedDate.toISOString(),
+      unassignedDate: assignment.unassignedDate?.toISOString() ?? null,
+      workstation: assignment.workstation
+    }))
+  };
 }
 
 function alertMessage(params: {
@@ -301,7 +416,7 @@ export async function syncAlerts() {
       where: { id: entry.assetId },
       include: {
         workstationAssignments: {
-          where: { isActive: true },
+          where: { isActive: true, status: "ACTIVE" },
           include: { workstation: true }
         }
       }
@@ -395,12 +510,12 @@ export async function listWorkstations(filters: { search?: string; status?: stri
     include: {
       _count: {
         select: {
-          assets: { where: { isActive: true } },
+          assets: { where: currentWorkstationAssignmentWhere },
           repairs: { where: { deletedAt: null } }
         }
       },
       assets: {
-        where: { isActive: true },
+        where: currentWorkstationAssignmentWhere,
         include: {
           asset: {
             include: {
@@ -429,11 +544,23 @@ export async function getWorkstationById(id: string) {
   return workstation;
 }
 
-export async function listAssets(filters: { search?: string; type?: string; status?: string }) {
-  return prisma.asset.findMany({
+export async function listAssets(filters: {
+  search?: string;
+  type?: string;
+  status?: string;
+  location?: string;
+}) {
+  const workstationLocationFilter =
+    filters.location && /^WS-\d{2}$/i.test(filters.location) ? filters.location : null;
+
+  const assets = await prisma.asset.findMany({
     where: {
       deletedAt: null,
-      status: (filters.status as any) ?? undefined,
+      status: workstationLocationFilter
+        ? { in: [...CURRENT_WORKSTATION_ASSET_STATUSES] }
+        : filters.status
+          ? (filters.status as any)
+          : { not: "ARCHIVED" },
       assetType: filters.type
         ? {
             name: { equals: filters.type, mode: "insensitive" }
@@ -443,22 +570,67 @@ export async function listAssets(filters: { search?: string; type?: string; stat
         ? [
             { assetCode: { contains: filters.search, mode: "insensitive" } },
             { serialNumber: { contains: filters.search, mode: "insensitive" } },
+            { brand: { contains: filters.search, mode: "insensitive" } },
+            { model: { contains: filters.search, mode: "insensitive" } },
             {
               workstationAssignments: {
                 some: {
-                  isActive: true,
+                  status: "ACTIVE",
                   workstation: { code: { contains: filters.search, mode: "insensitive" } }
+                }
+              }
+            },
+            {
+              workstationAssignments: {
+                some: {
+                  status: "ACTIVE",
+                  generalLocation: { contains: filters.search, mode: "insensitive" }
+                }
+              }
+            },
+            {
+              workstationAssignments: {
+                some: {
+                  status: "ACTIVE",
+                  specificLocationNotes: { contains: filters.search, mode: "insensitive" }
                 }
               }
             }
           ]
         : undefined
+      ,
+      workstationAssignments: filters.location
+        ? {
+            some: {
+              status: "ACTIVE",
+              isActive: true,
+              ...(workstationLocationFilter
+                ? {
+                    workstation: {
+                      code: { equals: workstationLocationFilter, mode: "insensitive" }
+                    }
+                  }
+                : {
+                    OR: [
+                      { workstation: { code: { equals: filters.location, mode: "insensitive" } } },
+                      { generalLocation: { equals: filters.location, mode: "insensitive" } },
+                      {
+                        specificLocationNotes: {
+                          contains: filters.location,
+                          mode: "insensitive"
+                        }
+                      }
+                    ]
+                  })
+            }
+          }
+        : undefined
     },
     include: {
       assetType: true,
       workstationAssignments: {
-        where: { isActive: true },
-        include: { workstation: true }
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
       },
       repairs: {
         where: { deletedAt: null },
@@ -468,6 +640,62 @@ export async function listAssets(filters: { search?: string; type?: string; stat
     },
     orderBy: [{ assetType: { name: "asc" } }, { assetCode: "asc" }]
   });
+
+  return assets.map(mapAssetRecord);
+}
+
+export async function archiveAsset(id: string) {
+  const asset = await prisma.asset.findUnique({
+    where: { id },
+    include: {
+      assetType: true,
+      workstationAssignments: {
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
+      }
+    }
+  });
+
+  if (!asset || asset.deletedAt) {
+    throw createError(404, "Asset not found.");
+  }
+
+  const activeAssignment = asset.workstationAssignments.find(
+    (assignment) => assignment.status === "ACTIVE" || assignment.isActive
+  );
+
+  if (activeAssignment) {
+    const activeLocation =
+      activeAssignment.workstation?.code ??
+      activeAssignment.specificLocationNotes ??
+      activeAssignment.generalLocation ??
+      "an active location";
+
+    throw createError(
+      409,
+      `${asset.assetCode} is still assigned to ${activeLocation}. Unassign it before archiving.`
+    );
+  }
+
+  if (asset.status === "ARCHIVED") {
+    return mapAssetRecord(asset);
+  }
+
+  const archivedAsset = await prisma.asset.update({
+    where: { id },
+    data: {
+      status: "ARCHIVED"
+    },
+    include: {
+      assetType: true,
+      workstationAssignments: {
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
+      }
+    }
+  });
+
+  return mapAssetRecord(archivedAsset);
 }
 
 export async function getAssetById(id: string) {
@@ -476,7 +704,7 @@ export async function getAssetById(id: string) {
     include: {
       assetType: true,
       workstationAssignments: {
-        include: { workstation: true },
+        include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }
       },
       repairs: {
@@ -502,7 +730,7 @@ export async function getAssetById(id: string) {
     throw createError(404, "Asset not found");
   }
 
-  return asset;
+  return mapAssetRecord(asset);
 }
 
 export async function listRepairs(filters: { status?: string; workstationId?: string; assetId?: string }) {
@@ -521,7 +749,7 @@ export async function listRepairs(filters: { status?: string; workstationId?: st
 }
 
 export async function createRepair(input: {
-  workstationId: string;
+  workstationId?: string | null;
   assetId: string;
   reportedDate: string;
   faultDescription: string;
@@ -552,24 +780,34 @@ export async function createRepair(input: {
     throw createError(404, "Asset not found");
   }
 
-  if (asset.assetType.name !== "Machine") {
-    throw createError(400, "Repairs can only be created for machine assets");
+  const activeAssignment = await prisma.workstationAsset.findFirst({
+    where: {
+      assetId: input.assetId,
+      OR: [{ status: "ACTIVE" }, { isActive: true }]
+    },
+    include: { workstation: true }
+  });
+
+  const resolvedWorkstationId = activeAssignment?.workstationId ?? input.workstationId ?? null;
+  if (!resolvedWorkstationId) {
+    throw createError(
+      400,
+      "The selected asset does not have an active workstation assignment for this repair."
+    );
   }
 
-  const workstation = await prisma.workstation.findUnique({ where: { id: input.workstationId } });
+  const workstation = await prisma.workstation.findUnique({ where: { id: resolvedWorkstationId } });
   if (!workstation || workstation.deletedAt) {
     throw createError(404, "Workstation not found");
   }
-
-  const activeAssignment = await prisma.workstationAsset.findFirst({
-    where: { assetId: input.assetId, isActive: true }
-  });
 
   if (activeAssignment) {
     await prisma.workstationAsset.update({
       where: { id: activeAssignment.id },
       data: {
+        status: "INACTIVE",
         isActive: false,
+        endDate: input.sentDate ? new Date(input.sentDate) : new Date(),
         unassignedDate: input.sentDate ? new Date(input.sentDate) : new Date()
       }
     });
@@ -577,7 +815,7 @@ export async function createRepair(input: {
 
   const repair = await prisma.repair.create({
     data: {
-      workstationId: input.workstationId,
+      workstationId: resolvedWorkstationId,
       assetId: input.assetId,
       reportedDate: new Date(input.reportedDate),
       faultDescription: input.faultDescription,
@@ -607,15 +845,40 @@ export async function createRepair(input: {
   if (input.replacementAssetId && input.replacementDate) {
     const replacementAsset = await prisma.asset.findUnique({
       where: { id: input.replacementAssetId },
-      include: { assetType: true }
+      include: {
+        assetType: true,
+        workstationAssignments: {
+          where: { status: "ACTIVE" },
+          include: { workstation: true }
+        }
+      }
     });
 
     if (!replacementAsset || replacementAsset.deletedAt) {
       throw createError(404, "Replacement asset not found");
     }
 
-    if (replacementAsset.assetType.name !== "Machine") {
-      throw createError(400, "Replacement asset must be a machine");
+    if (replacementAsset.assetTypeId !== asset.assetTypeId) {
+      throw createError(409, "Replacement asset must match the original device type.");
+    }
+
+    if (replacementAsset.status !== "IN_STORE") {
+      throw createError(409, "Replacement asset must be available in store.");
+    }
+
+    if (replacementAsset.workstationAssignments.some((assignment) => assignment.status === "ACTIVE")) {
+      throw createError(409, "Replacement asset is already assigned.");
+    }
+
+    const activeReplacementUsage = await prisma.replacementLog.findFirst({
+      where: {
+        replacementAssetId: input.replacementAssetId,
+        status: { in: ["ACTIVE", "PENDING_RESTORE"] }
+      }
+    });
+
+    if (activeReplacementUsage) {
+      throw createError(409, "Replacement asset is already being used as an active replacement.");
     }
 
     await prisma.replacementLog.create({
@@ -623,7 +886,7 @@ export async function createRepair(input: {
         repairId: repair.id,
         originalAssetId: input.assetId,
         replacementAssetId: input.replacementAssetId,
-        workstationId: input.workstationId,
+        workstationId: resolvedWorkstationId,
         replacementDate: new Date(input.replacementDate),
         replacementReturnDate: input.replacementReturnDate ? new Date(input.replacementReturnDate) : null,
         status: input.replacementStatus ?? "ACTIVE",
@@ -641,9 +904,13 @@ export async function createRepair(input: {
 
     await prisma.workstationAsset.create({
       data: {
-        workstationId: input.workstationId,
+        workstationId: resolvedWorkstationId,
         assetId: input.replacementAssetId,
         assignmentType: "TEMPORARY_REPLACEMENT",
+        status: "ACTIVE",
+        side: activeAssignment?.side ?? null,
+        position: activeAssignment?.position ?? null,
+        startDate: new Date(input.replacementDate),
         assignedDate: new Date(input.replacementDate),
         isActive: true,
         notes: input.replacementNotes
@@ -717,12 +984,26 @@ export async function updateRepair(id: string, input: Record<string, unknown>) {
     });
 
     if (!existingAssignment) {
+      const lastKnownAssignment = await prisma.workstationAsset.findFirst({
+        where: {
+          assetId: existing.assetId,
+          workstationId: existing.workstationId
+        },
+        orderBy: { assignedDate: "desc" }
+      });
+
       await prisma.workstationAsset.create({
         data: {
           workstationId: existing.workstationId,
           assetId: existing.assetId,
           assignmentType: "PRIMARY",
+          status: "ACTIVE",
+          generalLocation: lastKnownAssignment?.generalLocation ?? null,
+          specificLocationNotes: lastKnownAssignment?.specificLocationNotes ?? null,
+          side: lastKnownAssignment?.side ?? null,
+          position: lastKnownAssignment?.position ?? null,
           assignedDate: new Date(input.actualReturnDate as string),
+          startDate: new Date(input.actualReturnDate as string),
           isActive: true,
           notes: "Reassigned after repair return"
         }
@@ -760,7 +1041,11 @@ export async function updateRepair(id: string, input: Record<string, unknown>) {
           isActive: true
         },
         data: {
+          status: "INACTIVE",
           isActive: false,
+          endDate: input.replacementReturnDate
+            ? new Date(input.replacementReturnDate as string)
+            : new Date(),
           unassignedDate: input.replacementReturnDate
             ? new Date(input.replacementReturnDate as string)
             : new Date()
@@ -787,25 +1072,135 @@ export async function listReplacements() {
 }
 
 export async function createReplacement(input: {
-  repairId: string;
   originalAssetId: string;
   replacementAssetId: string;
-  workstationId: string;
+  replacementType: "TEMPORARY" | "PERMANENT";
   replacementDate: string;
-  replacementReturnDate?: string | null;
-  status: "ACTIVE" | "REMOVED" | "PENDING_RESTORE";
-  notes?: string | null;
+  reason: "DUE_TO_ONGOING_REPAIR" | "NOT_WORKING" | "OTHER";
+  customReason?: string | null;
+  workstationId?: string | null;
 }) {
+  const [originalAsset, replacementAsset] = await Promise.all([
+    prisma.asset.findUnique({
+      where: { id: input.originalAssetId },
+      include: {
+        assetType: true,
+        workstationAssignments: {
+          where: { status: "ACTIVE" },
+          include: { workstation: true },
+          orderBy: { assignedDate: "desc" }
+        }
+      }
+    }),
+    prisma.asset.findUnique({
+      where: { id: input.replacementAssetId },
+      include: {
+        assetType: true,
+        workstationAssignments: {
+          where: { status: "ACTIVE" },
+          include: { workstation: true }
+        }
+      }
+    })
+  ]);
+
+  if (!originalAsset || originalAsset.deletedAt) {
+    throw createError(404, "Original asset not found.");
+  }
+
+  if (!replacementAsset || replacementAsset.deletedAt) {
+    throw createError(404, "Replacement asset not found.");
+  }
+
+  if (originalAsset.assetTypeId !== replacementAsset.assetTypeId) {
+    throw createError(409, "Replacement asset must match the original device type.");
+  }
+
+  if (replacementAsset.status !== "IN_STORE") {
+    throw createError(409, "Replacement asset must be available in store.");
+  }
+
+  if (replacementAsset.workstationAssignments.some((assignment) => assignment.status === "ACTIVE")) {
+    throw createError(409, "Replacement asset is already assigned.");
+  }
+
+  const activeReplacementUsage = await prisma.replacementLog.findFirst({
+    where: {
+      replacementAssetId: input.replacementAssetId,
+      status: { in: ["ACTIVE", "PENDING_RESTORE"] }
+    }
+  });
+
+  if (activeReplacementUsage) {
+    throw createError(409, "Replacement asset is already being used as an active replacement.");
+  }
+
+  const originalActiveAssignment =
+    originalAsset.workstationAssignments.find((assignment) => assignment.status === "ACTIVE") ?? null;
+  const workstationId = input.workstationId ?? originalActiveAssignment?.workstationId ?? null;
+
+  if (!workstationId) {
+    throw createError(400, "A workstation-linked original asset is required for this replacement flow.");
+  }
+
+  const workstation = await prisma.workstation.findUnique({ where: { id: workstationId } });
+  if (!workstation || workstation.deletedAt) {
+    throw createError(404, "Workstation not found.");
+  }
+
+  const replacementDate = new Date(input.replacementDate);
+  const isPermanent = input.replacementType === "PERMANENT";
+
+  const repair = await prisma.repair.create({
+    data: {
+      workstationId,
+      assetId: input.originalAssetId,
+      reportedDate: replacementDate,
+      faultDescription:
+        input.reason === "DUE_TO_ONGOING_REPAIR"
+          ? "Replacement issued due to ongoing repair"
+          : input.reason === "NOT_WORKING"
+            ? "Replacement issued because original device is not working"
+            : input.customReason?.trim() || "Replacement issued",
+      sentTo: null,
+      repairType: "ON_SITE",
+      sentDate: replacementDate,
+      expectedReturnDate: null,
+      actualReturnDate: isPermanent ? replacementDate : null,
+      diagnosis: null,
+      repairAction: isPermanent ? "Permanent replacement assigned" : "Temporary replacement assigned",
+      partsChanged: null,
+      cost: null,
+      handledBy: "Replacement workflow",
+      notes: input.customReason ?? null,
+      status: isPermanent ? "CLOSED" : "IN_PROGRESS"
+    }
+  });
+
+  await prisma.workstationAsset.updateMany({
+    where: {
+      assetId: input.originalAssetId,
+      status: "ACTIVE"
+    },
+    data: {
+      status: "INACTIVE",
+      isActive: false,
+      endDate: replacementDate,
+      unassignedDate: replacementDate,
+      notes: "Original replaced"
+    }
+  });
+
   const replacement = await prisma.replacementLog.create({
     data: {
-      repairId: input.repairId,
+      repairId: repair.id,
       originalAssetId: input.originalAssetId,
       replacementAssetId: input.replacementAssetId,
-      workstationId: input.workstationId,
-      replacementDate: new Date(input.replacementDate),
-      replacementReturnDate: input.replacementReturnDate ? new Date(input.replacementReturnDate) : null,
-      status: input.status,
-      notes: input.notes
+      workstationId,
+      replacementDate,
+      replacementReturnDate: null,
+      status: isPermanent ? "PENDING_RESTORE" : "ACTIVE",
+      notes: input.reason === "OTHER" ? input.customReason ?? null : input.reason
     },
     include: {
       workstation: true,
@@ -817,17 +1212,34 @@ export async function createReplacement(input: {
 
   await prisma.asset.update({
     where: { id: input.replacementAssetId },
-    data: { status: "TEMPORARY_REPLACEMENT" }
+    data: {
+      status: isPermanent ? "ACTIVE" : "TEMPORARY_REPLACEMENT",
+      currentLocation: workstation.code
+    }
   });
 
   await prisma.workstationAsset.create({
     data: {
-      workstationId: input.workstationId,
+      workstationId,
       assetId: input.replacementAssetId,
-      assignmentType: "TEMPORARY_REPLACEMENT",
-      assignedDate: new Date(input.replacementDate),
+      assignmentType: isPermanent ? "PRIMARY" : "TEMPORARY_REPLACEMENT",
+      status: "ACTIVE",
+      generalLocation: originalActiveAssignment?.generalLocation ?? null,
+      specificLocationNotes: originalActiveAssignment?.specificLocationNotes ?? null,
+      side: originalActiveAssignment?.side ?? null,
+      position: originalActiveAssignment?.position ?? null,
+      assignedDate: replacementDate,
+      startDate: replacementDate,
       isActive: true,
-      notes: input.notes
+      notes: isPermanent ? "Permanent replacement" : "Active replacement"
+    }
+  });
+
+  await prisma.asset.update({
+    where: { id: input.originalAssetId },
+    data: {
+      status: isPermanent ? "DAMAGED" : "IN_REPAIR",
+      currentLocation: workstation.code
     }
   });
 
@@ -916,7 +1328,7 @@ export async function createWorkstationAssignment(
   if (activeAssignment) {
     throw createError(
       409,
-      `${asset.assetCode} is already actively assigned to ${activeAssignment.workstation.code}.`
+      `${asset.assetCode} is already actively assigned to ${activeAssignment.workstation?.code ?? "another location"}.`
     );
   }
 
@@ -967,11 +1379,67 @@ export async function createAsset(input: {
   serialNumber: string;
   specification?: string | null;
   purchaseDate?: string | null;
-  status: "ACTIVE" | "IN_REPAIR" | "IN_STORE" | "TEMPORARY_REPLACEMENT" | "DAMAGED" | "RETIRED";
+  warrantyExpiryDate?: string | null;
+  status:
+    | "ACTIVE"
+    | "IN_REPAIR"
+    | "IN_STORE"
+    | "TEMPORARY_REPLACEMENT"
+    | "DAMAGED"
+    | "RETIRED"
+    | "ARCHIVED";
+  assetScope?: "WORKSTATION_DEVICE" | "OTHER_NON_WORKSTATION_DEVICE" | null;
   currentLocation?: string | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+  assignment?: {
+    workstationCode?: string | null;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
+    status?: "ACTIVE" | "INACTIVE";
+    startDate?: string;
+  } | null;
   notes?: string | null;
 }) {
-  return prisma.asset.create({
+  const [existingByCode, existingBySerial] = await Promise.all([
+    prisma.asset.findFirst({
+      where: {
+        deletedAt: null,
+        assetCode: { equals: input.assetCode, mode: "insensitive" }
+      }
+    }),
+    prisma.asset.findFirst({
+      where: {
+        deletedAt: null,
+        serialNumber: { equals: input.serialNumber, mode: "insensitive" }
+      }
+    })
+  ]);
+
+  if (existingByCode) {
+    throw createError(409, "Inventory code already exists.");
+  }
+
+  if (existingBySerial) {
+    throw createError(409, "Serial number already exists.");
+  }
+
+  const workstation = input.assignment?.workstationCode
+    ? await prisma.workstation.findFirst({
+        where: {
+          deletedAt: null,
+          code: { equals: input.assignment.workstationCode, mode: "insensitive" }
+        }
+      })
+    : null;
+
+  if (input.assignment?.workstationCode && !workstation) {
+    throw createError(404, "Selected workstation was not found.");
+  }
+
+  const asset = await prisma.asset.create({
     data: {
       assetCode: input.assetCode,
       assetTypeId: input.assetTypeId,
@@ -980,12 +1448,54 @@ export async function createAsset(input: {
       serialNumber: input.serialNumber,
       specification: input.specification,
       purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : null,
+      warrantyExpiryDate: input.warrantyExpiryDate ? new Date(input.warrantyExpiryDate) : null,
       status: input.status,
+      assetScope: input.assetScope ?? null,
       currentLocation: input.currentLocation,
+      invoiceFileName: input.invoiceFileName,
+      invoiceFileUrl: input.invoiceFileUrl,
       notes: input.notes
     },
-    include: { assetType: true }
+    include: {
+      assetType: true,
+      workstationAssignments: {
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
+      }
+    }
   });
+
+  if (input.assignment && input.status !== "IN_STORE") {
+    await prisma.workstationAsset.create({
+      data: {
+        assetId: asset.id,
+        workstationId: workstation?.id ?? null,
+        assignmentType: "PRIMARY",
+        status: input.assignment.status ?? "ACTIVE",
+        generalLocation: input.assignment.generalLocation ?? null,
+        specificLocationNotes: input.assignment.specificLocationNotes ?? null,
+        side: input.assignment.side ?? null,
+        position: input.assignment.position ?? null,
+        startDate: input.assignment.startDate ? new Date(input.assignment.startDate) : new Date(),
+        assignedDate: input.assignment.startDate ? new Date(input.assignment.startDate) : new Date(),
+        isActive: (input.assignment.status ?? "ACTIVE") === "ACTIVE",
+        notes: input.notes ?? null
+      }
+    });
+  }
+
+  const createdAsset = await prisma.asset.findUniqueOrThrow({
+    where: { id: asset.id },
+    include: {
+      assetType: true,
+      workstationAssignments: {
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
+      }
+    }
+  });
+
+  return mapAssetRecord(createdAsset);
 }
 
 export async function updateAsset(id: string, input: {
@@ -996,11 +1506,83 @@ export async function updateAsset(id: string, input: {
   serialNumber: string;
   specification?: string | null;
   purchaseDate?: string | null;
-  status: "ACTIVE" | "IN_REPAIR" | "IN_STORE" | "TEMPORARY_REPLACEMENT" | "DAMAGED" | "RETIRED";
+  warrantyExpiryDate?: string | null;
+  status:
+    | "ACTIVE"
+    | "IN_REPAIR"
+    | "IN_STORE"
+    | "TEMPORARY_REPLACEMENT"
+    | "DAMAGED"
+    | "RETIRED"
+    | "ARCHIVED";
+  assetScope?: "WORKSTATION_DEVICE" | "OTHER_NON_WORKSTATION_DEVICE" | null;
   currentLocation?: string | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+  assignment?: {
+    workstationCode?: string | null;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
+    status?: "ACTIVE" | "INACTIVE";
+    startDate?: string;
+  } | null;
   notes?: string | null;
 }) {
-  return prisma.asset.update({
+  const existingAsset = await prisma.asset.findUnique({
+    where: { id },
+    include: {
+      workstationAssignments: {
+        where: { status: "ACTIVE" },
+        include: assetAssignmentInclude
+      }
+    }
+  });
+
+  if (!existingAsset || existingAsset.deletedAt) {
+    throw createError(404, "Asset not found");
+  }
+
+  const [existingByCode, existingBySerial] = await Promise.all([
+    prisma.asset.findFirst({
+      where: {
+        deletedAt: null,
+        id: { not: id },
+        assetCode: { equals: input.assetCode, mode: "insensitive" }
+      }
+    }),
+    prisma.asset.findFirst({
+      where: {
+        deletedAt: null,
+        id: { not: id },
+        serialNumber: { equals: input.serialNumber, mode: "insensitive" }
+      }
+    })
+  ]);
+
+  if (existingByCode) {
+    throw createError(409, "Inventory code already exists.");
+  }
+
+  if (existingBySerial) {
+    throw createError(409, "Serial number already exists.");
+  }
+
+  const workstation = input.assignment?.workstationCode
+    ? await prisma.workstation.findFirst({
+        where: {
+          deletedAt: null,
+          code: { equals: input.assignment.workstationCode, mode: "insensitive" }
+        }
+      })
+    : null;
+
+  if (input.assignment?.workstationCode && !workstation) {
+    throw createError(404, "Selected workstation was not found.");
+  }
+
+  await prisma.asset.update({
     where: { id },
     data: {
       assetCode: input.assetCode,
@@ -1010,10 +1592,55 @@ export async function updateAsset(id: string, input: {
       serialNumber: input.serialNumber,
       specification: input.specification,
       purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : null,
+      warrantyExpiryDate: input.warrantyExpiryDate ? new Date(input.warrantyExpiryDate) : null,
       status: input.status,
+      assetScope: input.assetScope ?? null,
       currentLocation: input.currentLocation,
+      invoiceFileName: input.invoiceFileName,
+      invoiceFileUrl: input.invoiceFileUrl,
       notes: input.notes
     },
-    include: { assetType: true }
   });
+
+  await prisma.workstationAsset.updateMany({
+    where: { assetId: id, status: "ACTIVE" },
+    data: {
+      status: "INACTIVE",
+      isActive: false,
+      endDate: new Date(),
+      unassignedDate: new Date()
+    }
+  });
+
+  if (input.assignment && input.status !== "IN_STORE") {
+    await prisma.workstationAsset.create({
+      data: {
+        assetId: id,
+        workstationId: workstation?.id ?? null,
+        assignmentType: "PRIMARY",
+        status: input.assignment.status ?? "ACTIVE",
+        generalLocation: input.assignment.generalLocation ?? null,
+        specificLocationNotes: input.assignment.specificLocationNotes ?? null,
+        side: input.assignment.side ?? null,
+        position: input.assignment.position ?? null,
+        startDate: input.assignment.startDate ? new Date(input.assignment.startDate) : new Date(),
+        assignedDate: input.assignment.startDate ? new Date(input.assignment.startDate) : new Date(),
+        isActive: (input.assignment.status ?? "ACTIVE") === "ACTIVE",
+        notes: input.notes ?? null
+      }
+    });
+  }
+
+  const updatedAsset = await prisma.asset.findUniqueOrThrow({
+    where: { id },
+    include: {
+      assetType: true,
+      workstationAssignments: {
+        include: assetAssignmentInclude,
+        orderBy: { assignedDate: "desc" }
+      }
+    }
+  });
+
+  return mapAssetRecord(updatedAsset);
 }

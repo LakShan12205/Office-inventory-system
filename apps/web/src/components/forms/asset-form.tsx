@@ -2,8 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createAsset } from "@/lib/api";
-import { AssetType } from "@/lib/types";
+import { createAsset, updateAsset } from "@/lib/api";
+import {
+  getPlacementPositionOptions,
+  getPlacementSideOptions
+} from "@/lib/asset-mapping";
+import { AssetRecord, AssetType } from "@/lib/types";
 
 const flowWorkstations: Record<string, string[]> = {
   "1st Flow": ["WS-07", "WS-08", "WS-09", "WS-10", "WS-11", "WS-12"],
@@ -21,7 +25,18 @@ const generalLocationOptions = [
   "Store"
 ];
 
-export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
+function toDateInputValue(value?: string | null) {
+  if (!value) return "";
+  return value.slice(0, 10);
+}
+
+export function AssetForm({
+  assetTypes,
+  initialAsset
+}: {
+  assetTypes: AssetType[];
+  initialAsset?: AssetRecord;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -41,32 +56,43 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
     { label: "Tab", id: assetTypes.find((type) => type.name === "Tablet")?.id ?? "" }
   ].filter((option) => option.id);
 
-  const [form, setForm] = useState({
-    assetCode: "",
-    assetTypeId: inventoryTypeOptions[0]?.id ?? assetTypes[0]?.id ?? "",
-    brand: "",
-    model: "",
-    serialNumber: "",
-    purchaseDate: "",
-    warrantyExpiryDate: "",
-    status: "IN_STORE",
-    assetScope: "Workstation Device",
-    assignmentFlow: "",
-    workstationCode: "",
-    assignmentSide: "",
-    generalLocation: "",
-    specificLocationNotes: "",
-    invoiceFileName: ""
-  });
+  const [form, setForm] = useState(() => ({
+    assetCode: initialAsset?.assetCode ?? "",
+    assetTypeId: initialAsset?.assetType.id ?? inventoryTypeOptions[0]?.id ?? assetTypes[0]?.id ?? "",
+    brand: initialAsset?.brand ?? "",
+    model: initialAsset?.model ?? "",
+    serialNumber: initialAsset?.serialNumber ?? "",
+    purchaseDate: toDateInputValue(initialAsset?.purchaseDate),
+    warrantyExpiryDate: toDateInputValue(initialAsset?.warrantyExpiryDate),
+    status: initialAsset?.status ?? "IN_STORE",
+    assetScope: initialAsset?.assetScope ?? "Workstation Device",
+    assignmentFlow: initialAsset?.flow ?? "",
+    workstationCode: initialAsset?.workstationCode ?? "",
+    assignmentSide: initialAsset?.side ?? "",
+    assignmentPosition: initialAsset?.position ?? "",
+    generalLocation: initialAsset?.generalLocation ?? "",
+    specificLocationNotes: initialAsset?.specificLocationNotes ?? "",
+    invoiceFileName: initialAsset?.invoiceFileName ?? ""
+  }));
 
   const isActive = form.status === "ACTIVE";
   const isWorkstationScope = form.assetScope === "Workstation Device";
+  const selectedAssetTypeName =
+    assetTypes.find((type) => type.id === form.assetTypeId)?.name ?? null;
+  const sideOptions = getPlacementSideOptions(selectedAssetTypeName);
+  const positionOptions = getPlacementPositionOptions(selectedAssetTypeName);
   const availableWorkstations = flowWorkstations[form.assignmentFlow] ?? [];
   const sideApplicable =
     isActive &&
+    sideOptions.length > 0 &&
     (isWorkstationScope
       ? Boolean(form.workstationCode) || (availableWorkstations.length === 0 && Boolean(form.assignmentFlow))
       : Boolean(form.generalLocation));
+  const positionApplicable =
+    isActive &&
+    isWorkstationScope &&
+    positionOptions.length > 0 &&
+    (Boolean(form.workstationCode) || (availableWorkstations.length === 0 && Boolean(form.assignmentFlow)));
 
   const shouldShowAssignmentSummary =
     isActive &&
@@ -79,7 +105,8 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
     isWorkstationScope
       ? form.workstationCode || (!availableWorkstations.length && form.assignmentFlow ? "Workstation area" : null)
       : form.specificLocationNotes || null,
-    sideApplicable ? form.assignmentSide || null : null
+    sideApplicable ? form.assignmentSide || null : null,
+    positionApplicable ? form.assignmentPosition || null : null
   ].filter(Boolean);
 
   function clearFieldError(name: string) {
@@ -105,6 +132,7 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
       assignmentFlow: "",
       workstationCode: "",
       assignmentSide: "",
+      assignmentPosition: "",
       generalLocation: "",
       specificLocationNotes: ""
     }));
@@ -118,6 +146,7 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
       assignmentFlow: "",
       workstationCode: "",
       assignmentSide: "",
+      assignmentPosition: "",
       generalLocation: "",
       specificLocationNotes: ""
     }));
@@ -129,7 +158,8 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
       ...current,
       assignmentFlow: flow,
       workstationCode: "",
-      assignmentSide: ""
+      assignmentSide: "",
+      assignmentPosition: ""
     }));
   }
 
@@ -178,6 +208,9 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
         if (sideApplicable && !form.assignmentSide) {
           nextErrors.assignmentSide = "Please select a side.";
         }
+        if (positionApplicable && !form.assignmentPosition) {
+          nextErrors.assignmentPosition = "Please select a position.";
+        }
       } else {
         if (!form.generalLocation) nextErrors.generalLocation = "Please select a general location.";
       }
@@ -199,36 +232,61 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
 
     startTransition(async () => {
       try {
-        const detailNotes = [
-          form.warrantyExpiryDate ? `Warranty Expiry Date: ${form.warrantyExpiryDate}` : null,
-          form.invoiceFileName ? `Attached Invoice: ${form.invoiceFileName}` : null,
-          isActive ? `Asset Scope: ${form.assetScope}` : null,
-          isActive && isWorkstationScope && form.assignmentFlow ? `Flow: ${form.assignmentFlow}` : null,
-          isActive && isWorkstationScope && form.workstationCode ? `Assigned Workstation: ${form.workstationCode}` : null,
-          isActive && !isWorkstationScope && form.generalLocation ? `General Location: ${form.generalLocation}` : null,
-          isActive && !isWorkstationScope && form.specificLocationNotes
-            ? `Specific Location / Notes: ${form.specificLocationNotes}`
-            : null,
-          isActive && sideApplicable && form.assignmentSide ? `Side: ${form.assignmentSide}` : null
-        ]
-          .filter(Boolean)
-          .join(" | ");
-
         const resolvedLocation = isActive
           ? isWorkstationScope
             ? form.workstationCode || form.assignmentFlow || "Office Floor"
             : form.specificLocationNotes || form.generalLocation || "Office Floor"
           : "Main Store";
 
-        await createAsset({
-          ...form,
+        const payload = {
+          assetCode: form.assetCode.trim(),
+          assetTypeId: form.assetTypeId,
+          brand: form.brand.trim(),
+          model: form.model.trim(),
+          serialNumber: form.serialNumber.trim(),
           purchaseDate: form.purchaseDate ? new Date(form.purchaseDate).toISOString() : null,
+          warrantyExpiryDate: form.warrantyExpiryDate
+            ? new Date(form.warrantyExpiryDate).toISOString()
+            : null,
+          status: form.status,
+          assetScope: isActive
+            ? isWorkstationScope
+              ? "WORKSTATION_DEVICE"
+              : "OTHER_NON_WORKSTATION_DEVICE"
+            : null,
           currentLocation: resolvedLocation,
-          specification: detailNotes || null,
-          notes: detailNotes || null
-        });
+          invoiceFileName: form.invoiceFileName || null,
+          assignment:
+            isActive
+              ? isWorkstationScope
+                ? {
+                    workstationCode: form.workstationCode || null,
+                    generalLocation: form.workstationCode ? null : form.assignmentFlow || null,
+                    side: form.assignmentSide || null,
+                    position: form.assignmentPosition || null,
+                    startDate: new Date().toISOString()
+                  }
+                : {
+                    generalLocation: form.generalLocation || null,
+                    specificLocationNotes: form.specificLocationNotes || null,
+                    startDate: new Date().toISOString()
+                  }
+              : null,
+          notes: null,
+          specification: null
+        };
 
-        setSuccessMessage("Inventory saved successfully. Redirecting to assets...");
+        if (initialAsset?.id) {
+          await updateAsset(initialAsset.id, payload);
+        } else {
+          await createAsset(payload);
+        }
+
+        setSuccessMessage(
+          initialAsset?.id
+            ? "Inventory updated successfully. Redirecting to assets..."
+            : "Inventory saved successfully. Redirecting to assets..."
+        );
         window.setTimeout(() => {
           router.push("/assets");
           router.refresh();
@@ -396,7 +454,7 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
                   <p className="text-sm font-semibold text-[var(--nav)]">{scope}</p>
                   <p className="mt-1 text-sm text-[var(--muted)]">
                     {scope === "Workstation Device"
-                      ? "Assign this item by flow, workstation, and side."
+                      ? "Assign this item by flow, workstation, and placement."
                       : "Assign this item to a general office location."}
                   </p>
                 </button>
@@ -463,7 +521,7 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
                 <div>
                   <p className="text-sm font-medium text-[var(--text)]">Side</p>
                   <div className="mt-3 inline-flex rounded-full border border-[var(--border)] bg-white p-1">
-                    {["Left", "Right"].map((side) => (
+                    {sideOptions.map((side) => (
                       <button
                         key={side}
                         type="button"
@@ -479,6 +537,29 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
                     ))}
                   </div>
                   {fieldErrors.assignmentSide ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.assignmentSide}</span> : null}
+                </div>
+              ) : null}
+
+              {positionApplicable ? (
+                <div>
+                  <p className="text-sm font-medium text-[var(--text)]">Position</p>
+                  <div className="mt-3 inline-flex rounded-full border border-[var(--border)] bg-white p-1">
+                    {positionOptions.map((position) => (
+                      <button
+                        key={position}
+                        type="button"
+                        onClick={() => updateField("assignmentPosition", position)}
+                        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                          form.assignmentPosition === position
+                            ? "bg-[var(--nav)] text-white shadow-sm"
+                            : "text-[var(--nav)] hover:bg-[var(--panel-strong)]"
+                        }`}
+                      >
+                        {position}
+                      </button>
+                    ))}
+                  </div>
+                  {fieldErrors.assignmentPosition ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.assignmentPosition}</span> : null}
                 </div>
               ) : null}
             </>
@@ -551,7 +632,7 @@ export function AssetForm({ assetTypes }: { assetTypes: AssetType[] }) {
           disabled={isPending}
           className="rounded-2xl bg-[var(--nav)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {isPending ? "Saving..." : "Save Inventory"}
+          {isPending ? "Saving..." : initialAsset?.id ? "Update Inventory" : "Save Inventory"}
         </button>
       </div>
     </form>

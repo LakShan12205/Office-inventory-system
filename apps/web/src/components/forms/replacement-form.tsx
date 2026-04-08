@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getPlacementValue } from "@/lib/asset-mapping";
 import { AssetRecord } from "@/lib/types";
 
 type FlowCode = "Flow-01" | "Flow-02";
@@ -295,7 +296,15 @@ export function ReplacementForm({
           {isWorkstationDevice ? (
             <p className="mt-1 text-xs text-[var(--muted)]">
               {values.flowCode} / {values.workstationCode}
-              {selectedOriginalAsset.side ? ` / ${selectedOriginalAsset.side}` : ""}
+              {getPlacementValue({
+                side: selectedOriginalAsset.side,
+                position: selectedOriginalAsset.position
+              })
+                ? ` / ${getPlacementValue({
+                    side: selectedOriginalAsset.side,
+                    position: selectedOriginalAsset.position
+                  })}`
+                : ""}
             </p>
           ) : (
             <p className="mt-1 text-xs text-[var(--muted)]">

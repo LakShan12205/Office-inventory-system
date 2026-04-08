@@ -4,9 +4,14 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ReplacementForm } from "@/components/forms/replacement-form";
 import { createReplacement } from "@/lib/api";
-import { AssetRecord, ReplacementRecord } from "@/lib/types";
-
-type FlowCode = "Flow-01" | "Flow-02";
+import {
+  FlowCode,
+  getAssetFlowCode,
+  getAssetLocationLabel,
+  getAssignmentWorkstationCode,
+  getAssignmentWorkstationId,
+} from "@/lib/asset-mapping";
+import { AssetRecord } from "@/lib/types";
 
 export type ReplacementInitialContext = {
   originalAssetId?: string | null;
@@ -22,44 +27,17 @@ function toReasonValue(value: string) {
   return "OTHER";
 }
 
-function getOperationalStatus(replacement: ReplacementRecord) {
-  const expected = replacement.repair?.expectedReturnDate;
-  if (replacement.isReturned) return "RETURNED";
-  if (expected && new Date(expected) < new Date()) return "OVERDUE";
-  return "ACTIVE";
-}
-
-function getFlowCodeFromWorkstationCode(workstationCode: string): FlowCode {
-  const numericCode = Number(workstationCode.split("-")[1]);
-  return numericCode >= 7 ? "Flow-01" : "Flow-02";
-}
-
-function assetLocationLabel(asset: AssetRecord) {
-  return (
-    asset.currentLocationDisplay ??
-    asset.displayLocation ??
-    asset.generalLocation ??
-    asset.currentLocation ??
-    asset.workstationCode ??
-    asset.workstationAssignments.find((assignment) => assignment.isActive)?.workstation.code ??
-    "Not recorded"
+function hasActiveAssignment(asset: AssetRecord) {
+  return asset.workstationAssignments.some(
+    (assignment) =>
+      assignment.isActive || (assignment as { status?: string | null }).status === "ACTIVE"
   );
 }
 
-function assetScopeLabel(asset: AssetRecord) {
-  return asset.assetScope ?? (asset.workstationAssignments.some((assignment) => assignment.isActive) ? "Workstation Device" : "Other / Non-Workstation Device");
-}
-
-function workstationCodeForAsset(asset: AssetRecord) {
-  return asset.workstationCode ?? asset.workstationAssignments.find((assignment) => assignment.isActive)?.workstation.code ?? "";
-}
-
 export function ReplacementFormView({
-  replacements,
   assets,
   initialContext
 }: {
-  replacements: ReplacementRecord[];
   assets: AssetRecord[];
   initialContext?: ReplacementInitialContext;
 }) {
@@ -83,23 +61,18 @@ export function ReplacementFormView({
     inventoryCandidates.find((asset) => asset.workstationCode === initialContext?.workstationCode) ??
     null;
 
-  const selectedReplacement =
-    replacements.find((item) => item.originalAsset.id === selectedOriginalAsset?.id) ??
-    replacements.find((item) => item.originalAsset.assetCode === selectedOriginalAsset?.assetCode) ??
-    null;
-
   const [draft, setDraft] = useState({
     flowCode:
       initialContext?.flowCode ??
-      (selectedOriginalAsset?.flow as FlowCode) ??
+      (selectedOriginalAsset ? getAssetFlowCode(selectedOriginalAsset) : null) ??
       "Flow-02",
     workstationCode:
       initialContext?.workstationCode ??
-      selectedOriginalAsset?.workstationCode ??
+      (selectedOriginalAsset ? getAssignmentWorkstationCode(selectedOriginalAsset) : null) ??
       "WS-01",
     deviceType: selectedOriginalAsset?.assetType.name ?? "Machine",
     originalAssetCode: selectedOriginalAsset?.assetCode ?? "",
-    location: selectedOriginalAsset ? assetLocationLabel(selectedOriginalAsset) : "Not recorded",
+    location: selectedOriginalAsset ? getAssetLocationLabel(selectedOriginalAsset) : "Not recorded",
     replacementAssetCode: "",
     replacementType: "Temporary" as "Temporary" | "Permanent",
     replacementDate: new Date().toISOString().slice(0, 10),
@@ -108,28 +81,23 @@ export function ReplacementFormView({
   });
 
   const contextOptions = useMemo(() => {
-    const activeReplacementCodes = new Set(
-      replacements
-        .filter((item) => !item.isReturned && getOperationalStatus(item) !== "RETURNED")
-        .map((item) => item.replacementAsset.assetCode)
-    );
-
     const replacementAssets = inventoryCandidates
       .filter((asset) => asset.assetType.name === draft.deviceType)
       .filter((asset) => asset.assetCode !== selectedOriginalAsset?.assetCode)
+      // Use the live asset record as the source of truth for replacement eligibility.
+      // If an asset is really available, it should be IN_STORE and have no active assignment.
       .filter((asset) => asset.status === "IN_STORE")
-      .filter((asset) => !asset.workstationAssignments.some((assignment) => assignment.isActive))
-      .filter((asset) => !activeReplacementCodes.has(asset.assetCode));
+      .filter((asset) => !hasActiveAssignment(asset));
 
     return replacementAssets.map((item) => ({
       value: item.assetCode,
-      label: `${item.assetCode} | ${item.brand} ${item.model} | ${assetLocationLabel(item)}`,
+      label: `${item.assetCode} | ${item.brand} ${item.model} | ${getAssetLocationLabel(item)}`,
       inventoryCode: item.assetCode,
       brandModel: `${item.brand} / ${item.model}`,
-      location: assetLocationLabel(item),
+      location: getAssetLocationLabel(item),
       status: item.status.replaceAll("_", " ")
     }));
-  }, [draft.deviceType, inventoryCandidates, replacements, selectedOriginalAsset?.assetCode]);
+  }, [draft.deviceType, inventoryCandidates, selectedOriginalAsset?.assetCode]);
 
   function updateDraft(name: keyof typeof draft, value: string) {
     setSubmissionState(null);
@@ -152,14 +120,12 @@ export function ReplacementFormView({
     ...draft,
     originalAssetCode: selectedOriginalAsset?.assetCode ?? draft.originalAssetCode,
     deviceType: selectedOriginalAsset?.assetType.name ?? draft.deviceType,
-    workstationCode: selectedOriginalAsset ? workstationCodeForAsset(selectedOriginalAsset) || draft.workstationCode : draft.workstationCode,
+    workstationCode: selectedOriginalAsset
+      ? getAssignmentWorkstationCode(selectedOriginalAsset) || draft.workstationCode
+      : draft.workstationCode,
     flowCode:
-      selectedOriginalAsset?.flow
-        ? (selectedOriginalAsset.flow as FlowCode)
-        : selectedOriginalAsset && workstationCodeForAsset(selectedOriginalAsset)
-          ? getFlowCodeFromWorkstationCode(workstationCodeForAsset(selectedOriginalAsset))
-          : draft.flowCode,
-    location: selectedOriginalAsset ? assetLocationLabel(selectedOriginalAsset) : draft.location
+      selectedOriginalAsset ? getAssetFlowCode(selectedOriginalAsset) ?? draft.flowCode : draft.flowCode,
+    location: selectedOriginalAsset ? getAssetLocationLabel(selectedOriginalAsset) : draft.location
   };
 
   function validateReplacementForm() {
@@ -221,8 +187,7 @@ export function ReplacementFormView({
       const replacementAsset = inventoryCandidates.find(
         (asset) => asset.assetCode === resolvedDraft.replacementAssetCode
       );
-      const activeAssignment =
-        selectedOriginalAsset.workstationAssignments.find((assignment) => assignment.isActive) ?? null;
+      const activeWorkstationId = getAssignmentWorkstationId(selectedOriginalAsset);
 
       if (!replacementAsset) {
         throw new Error("Selected replacement asset is no longer available.");
@@ -235,7 +200,7 @@ export function ReplacementFormView({
         replacementDate: new Date(`${resolvedDraft.replacementDate}T09:00:00`).toISOString(),
         reason: toReasonValue(resolvedDraft.reason) as "DUE_TO_ONGOING_REPAIR" | "NOT_WORKING" | "OTHER",
         customReason: resolvedDraft.reason === "Other" ? resolvedDraft.customReason : null,
-        workstationId: activeAssignment?.workstation.id ?? null
+        workstationId: activeWorkstationId
       });
 
       setSubmissionState({
@@ -243,10 +208,14 @@ export function ReplacementFormView({
         title: "Replacement created successfully.",
         description: "The replacement asset has been assigned."
       });
-    } catch {
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message
+          : "Failed to create replacement. Please try again.";
       setSubmissionState({
         type: "error",
-        title: "Failed to create replacement. Please try again.",
+        title: message,
         description: "Your form data is still here, so you can review it and submit again."
       });
     } finally {

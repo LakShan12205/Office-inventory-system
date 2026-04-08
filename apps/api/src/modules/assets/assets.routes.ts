@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { assetPayloadSchema, assetQuerySchema } from "../shared/inventory.schemas.js";
-import { inventoryRepository } from "../shared/inventory.repository.js";
+import * as inventoryService from "../shared/inventory.service.js";
 
 export const assetsRouter = Router();
 
 assetsRouter.get("/", async (req, res, next) => {
   try {
     const filters = assetQuerySchema.parse(req.query);
-    const assets = await inventoryRepository.listAssets(filters);
+    const assets = await inventoryService.listAssets(filters);
     res.json(assets);
   } catch (error) {
     next(error);
@@ -16,7 +16,7 @@ assetsRouter.get("/", async (req, res, next) => {
 
 assetsRouter.get("/types/all", async (_req, res, next) => {
   try {
-    const assetTypes = await inventoryRepository.listAssetTypes();
+    const assetTypes = await inventoryService.listAssetTypes();
     res.json(assetTypes);
   } catch (error) {
     next(error);
@@ -25,7 +25,7 @@ assetsRouter.get("/types/all", async (_req, res, next) => {
 
 assetsRouter.get("/:id", async (req, res, next) => {
   try {
-    const asset = await inventoryRepository.getAssetById(req.params.id);
+    const asset = await inventoryService.getAssetById(req.params.id);
     res.json(asset);
   } catch (error) {
     next(error);
@@ -35,7 +35,7 @@ assetsRouter.get("/:id", async (req, res, next) => {
 assetsRouter.post("/", async (req, res, next) => {
   try {
     const payload = assetPayloadSchema.parse(req.body);
-    const asset = await inventoryRepository.createAsset(payload);
+    const asset = await inventoryService.createAsset(payload);
     res.status(201).json(asset);
   } catch (error) {
     next(error);
@@ -45,7 +45,26 @@ assetsRouter.post("/", async (req, res, next) => {
 assetsRouter.put("/:id", async (req, res, next) => {
   try {
     const payload = assetPayloadSchema.parse(req.body);
-    const asset = await inventoryRepository.updateAsset(req.params.id, payload);
+    const asset = await inventoryService.updateAsset(req.params.id, payload);
+    res.json(asset);
+  } catch (error) {
+    next(error);
+  }
+});
+
+assetsRouter.patch("/:id", async (req, res, next) => {
+  try {
+    const payload = assetPayloadSchema.parse(req.body);
+    const asset = await inventoryService.updateAsset(req.params.id, payload);
+    res.json(asset);
+  } catch (error) {
+    next(error);
+  }
+});
+
+assetsRouter.post("/:id/archive", async (req, res, next) => {
+  try {
+    const asset = await inventoryService.archiveAsset(req.params.id);
     res.json(asset);
   } catch (error) {
     next(error);
