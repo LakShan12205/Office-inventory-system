@@ -1,6 +1,48 @@
 import { cache } from "react";
 
-function getApiBaseUrl() {
+export class ApiError extends Error {
+  issues?: Array<{ path?: string; message: string }>;
+
+  constructor(message: string, issues?: Array<{ path?: string; message: string }>) {
+    super(message);
+    this.name = "ApiError";
+    this.issues = issues;
+  }
+}
+
+function getReadableApiErrorMessage(status: number, data: any) {
+  return (
+    data?.error?.message ||
+    data?.message ||
+    (status >= 500
+      ? "The server could not complete the request. Please try again."
+      : `Request failed with status ${status}`)
+  );
+}
+
+export function getApiErrorMessages(error: unknown) {
+  if (error instanceof ApiError && Array.isArray(error.issues) && error.issues.length > 0) {
+    return Array.from(
+      new Set(
+        error.issues
+          .map((issue) => (typeof issue?.message === "string" ? issue.message.trim() : ""))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  if (error instanceof Error && error.message.trim()) {
+    return [error.message.trim()];
+  }
+
+  return ["Something went wrong. Please try again."];
+}
+
+function normalizeApiBase(url: string) {
+  return url.endsWith("/api") ? url : `${url}/api`;
+}
+
+function getWebApiBaseUrl() {
   // Browser side
   if (typeof window !== "undefined") {
     return "/api";
@@ -18,18 +60,51 @@ function getApiBaseUrl() {
   return "http://localhost:3000/api";
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = getApiBaseUrl();
-  const url = `${baseUrl}${path}`;
+function getBackendApiBaseUrl() {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+  }
 
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
-    cache: "no-store"
-  });
+  return "http://localhost:4000/api";
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  target: "web" | "backend" = "web"
+): Promise<T> {
+  const baseUrl = target === "backend" ? getBackendApiBaseUrl() : getWebApiBaseUrl();
+  const url = `${baseUrl}${path}`;
+  const headers = new Headers(init?.headers ?? {});
+
+  if (typeof window === "undefined") {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
+
+    if (cookieHeader && !headers.has("cookie")) {
+      headers.set("cookie", cookieHeader);
+    }
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...Object.fromEntries(headers.entries())
+      },
+      cache: "no-store",
+      credentials: "include"
+    });
+  } catch (error) {
+    throw new ApiError(
+      error instanceof Error && error.message
+        ? `Unable to reach the server. ${error.message}`
+        : "Unable to reach the server. Please try again."
+    );
+  }
 
   const rawText = await response.text();
 
@@ -48,52 +123,101 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       body: data
     });
 
-    throw new Error(
-      data?.error?.message ||
-        data?.message ||
-        `Request failed with status ${response.status}`
+    throw new ApiError(
+      getReadableApiErrorMessage(response.status, data),
+      Array.isArray(data?.error?.issues) ? data.error.issues : undefined
     );
   }
 
   return data as T;
 }
 
-export const getDashboard = cache(async () => request("/dashboard"));
-export const getWorkstations = cache(async (query = "") => request(`/workstations${query}`));
-export const getWorkstation = cache(async (id: string) => request(`/workstations/${id}`));
-// Asset reads stay uncached because the demo mutates in-memory mock data at runtime
-// and pages like /repairs/new must see the exact latest asset state immediately.
+// Dashboard counts should reflect the same live backend inventory state as the
+// Assets module. Keep this uncached so new assets show up immediately.
+export async function getDashboard() {
+  return request("/dashboard", undefined, "backend");
+}
+// Workstation views depend on mutable assignment state from assets, repairs, and
+// replacements. Keep these reads uncached so every page reflects the latest
+// active assignment data.
+export async function getWorkstations(query = "") {
+  return request(`/workstations${query}`, undefined, "backend");
+}
+
+export async function getWorkstation(id: string) {
+  return request(`/workstations/${id}`, undefined, "backend");
+}
+
+export async function getBackendWorkstations(query = "") {
+  return request(`/workstations${query}`, undefined, "backend");
+}
+
+export async function getBackendWorkstation(id: string) {
+  return request(`/workstations/${id}`, undefined, "backend");
+}
+// Assets are the first module cut over to the real Express/Prisma API.
+// Keep them uncached so create/edit flows reflect the latest DB state immediately.
 export async function getAssets(query = "") {
-  return request(`/assets${query}`);
+  return request(`/assets${query}`, undefined, "backend");
 }
 
 export async function getAsset(id: string) {
-  return request(`/assets/${id}`);
+  return request(`/assets/${id}`, undefined, "backend");
 }
-export const getAssetTypes = cache(async () => request("/assets/types/all"));
-export const getRepairs = cache(async (query = "") => request(`/repairs${query}`));
-export const getAlerts = cache(async (query = "") => request(`/alerts${query}`));
+export const getAssetTypes = cache(async () => request("/assets/types/all", undefined, "backend"));
+export const getRepairs = cache(async (query = "") => request(`/repairs${query}`, undefined, "backend"));
+export async function getAlerts(query = "") {
+  return request(`/alerts${query}`, undefined, "backend");
+}
 export const getReplacements = cache(async () => request("/replacements"));
+export const getBackendReplacements = cache(async () => request("/replacements", undefined, "backend"));
 
 export async function createReplacement(payload: unknown) {
   return request("/replacements", {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, "backend");
 }
 
 export async function createRepair(payload: unknown) {
   return request("/repairs", {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, "backend");
+}
+
+export async function returnRepair(
+  id: string,
+  payload: {
+    action: "RETURN_TO_WORKSTATION" | "MOVE_TO_STORE";
+    repairedBy: string;
+    notes?: string | null;
+  }
+) {
+  return request(`/repairs/${id}/return`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }, "backend");
 }
 
 export async function createAsset(payload: unknown) {
   return request("/assets", {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, "backend");
+}
+
+export async function updateAsset(id: string, payload: unknown) {
+  return request(`/assets/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  }, "backend");
+}
+
+export async function archiveAsset(id: string) {
+  return request(`/assets/${id}/archive`, {
+    method: "POST"
+  }, "backend");
 }
 
 export async function createWorkstationAssignment(
@@ -103,7 +227,7 @@ export async function createWorkstationAssignment(
   return request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, "backend");
 }
 
 export async function updateAlert(
@@ -111,7 +235,76 @@ export async function updateAlert(
   payload: { action: "read" | "dismiss" }
 ) {
   return request(`/alerts/${alertId}`, {
-    method: "PATCH",
+    method: "PUT",
+    body: JSON.stringify({
+      status: payload.action === "read" ? "READ" : "RESOLVED"
+    })
+  }, "backend");
+}
+
+export async function loginUser(payload: { username: string; password: string }) {
+  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
+    method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, "backend");
+}
+
+export async function logoutUser() {
+  return request("/auth/logout", {
+    method: "POST"
+  }, "backend");
+}
+
+export async function getCurrentUser() {
+  return request<{ user: import("./types").CurrentUser }>("/auth/me", undefined, "backend");
+}
+
+export async function submitAccessRequest(payload: {
+  fullName: string;
+  employeeId: string;
+  email: string;
+  requestedUsername: string;
+}) {
+  return request<{ message: string }>("/access-requests", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }, "backend");
+}
+
+export async function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+}) {
+  return request<{ user: import("./types").CurrentUser }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }, "backend");
+}
+
+export async function getAccessRequests() {
+  return request<{ requests: import("./types").AccessRequestRecord[] }>(
+    "/access-requests",
+    undefined,
+    "backend"
+  );
+}
+
+export async function approveAccessRequest(
+  id: string,
+  payload: { role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "EMPLOYEE" }
+) {
+  return request<{
+    user: import("./types").CurrentUser;
+    temporaryPassword: string;
+  }>(`/access-requests/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  }, "backend");
+}
+
+export async function rejectAccessRequest(id: string, payload?: { reason?: string | null }) {
+  return request(`/access-requests/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
+  }, "backend");
 }

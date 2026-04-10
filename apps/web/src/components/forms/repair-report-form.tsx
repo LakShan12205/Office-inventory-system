@@ -3,6 +3,26 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createRepair } from "@/lib/api";
+import {
+  flowCodeToLabel,
+  getAssetFlowCode,
+  getAssetLocationLabel,
+  getPlacementLabel,
+  getAssetScopeLabel,
+  getAssignmentGeneralLocation,
+  getAssignmentPosition,
+  getAssignmentSide,
+  getPlacementValue,
+  getAssignmentSpecificLocation,
+  getAssignmentWorkstationCode,
+  getAssignmentWorkstationId,
+  getWorkstationCodesForFlow,
+  isCurrentWorkstationAsset,
+  isWorkstationLinkedAsset,
+  matchesAssetTypeFilter,
+  normalizeFlowCode,
+  normalizeSearchText
+} from "@/lib/asset-mapping";
 import { AssetRecord, WorkstationListItem } from "@/lib/types";
 
 type RepairScope = "WORKSTATION_DEVICE" | "OTHER_DEVICE" | "";
@@ -15,6 +35,7 @@ type AssetOption = {
   brand: string;
   model: string;
   side?: string | null;
+  position?: string | null;
   purchaseDate?: string | null;
   warrantyExpiryDate?: string | null;
   assetScope?: string | null;
@@ -27,24 +48,6 @@ type AssetOption = {
   status: string;
   isWorkstationDevice: boolean;
 };
-
-function extractSide(asset: AssetRecord) {
-  const source = `${asset.notes ?? ""} ${asset.specification ?? ""}`;
-  const match = source.match(/Side:\s*(Left|Right)/i);
-  return match?.[1] ? `${match[1].charAt(0).toUpperCase()}${match[1].slice(1).toLowerCase()}` : null;
-}
-
-function extractMetadata(asset: AssetRecord, label: string) {
-  const source = `${asset.notes ?? ""} | ${asset.specification ?? ""}`;
-  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const pattern = new RegExp(`${escapedLabel}:\\s*([^|]+)`, "i");
-  const match = source.match(pattern);
-  return match?.[1]?.trim() ?? null;
-}
-
-function normalizeText(value?: string | null) {
-  return value?.trim().toLowerCase() ?? "";
-}
 
 function SearchIcon() {
   return (
@@ -84,14 +87,6 @@ export function RepairReportForm({
   const assetOptions: AssetOption[] = useMemo(
     () =>
       safeAssets.map((asset) => {
-        const activeAssignment = asset.workstationAssignments.find((assignment) => assignment.isActive);
-        const assetScope =
-          asset.assetScope ??
-          extractMetadata(asset, "Asset Scope") ??
-          (activeAssignment ? "Workstation Device" : "Other / Non-Workstation Device");
-        const generalLocation = asset.generalLocation ?? extractMetadata(asset, "General Location");
-        const specificLocationNotes =
-          asset.specificLocationNotes ?? extractMetadata(asset, "Specific Location / Notes");
         return {
           id: asset.id,
           assetCode: asset.assetCode,
@@ -99,18 +94,19 @@ export function RepairReportForm({
           serialNumber: asset.serialNumber,
           brand: asset.brand,
           model: asset.model,
-          side: extractSide(asset),
+          side: getAssignmentSide(asset),
+          position: getAssignmentPosition(asset),
           purchaseDate: asset.purchaseDate,
-          warrantyExpiryDate: extractMetadata(asset, "Warranty Expiry Date"),
-          assetScope,
-          flow: asset.flow ?? extractMetadata(asset, "Flow"),
-          generalLocation,
-          specificLocationNotes,
-          currentWorkstationId: activeAssignment?.workstation.id,
-          currentWorkstationCode: activeAssignment?.workstation.code,
-          currentLocation: asset.currentLocationDisplay ?? asset.displayLocation ?? asset.currentLocation,
+          warrantyExpiryDate: asset.warrantyExpiryDate ?? null,
+          assetScope: getAssetScopeLabel(asset),
+          flow: flowCodeToLabel(getAssetFlowCode(asset)) ?? asset.flow ?? null,
+          generalLocation: getAssignmentGeneralLocation(asset),
+          specificLocationNotes: getAssignmentSpecificLocation(asset),
+          currentWorkstationId: getAssignmentWorkstationId(asset) ?? undefined,
+          currentWorkstationCode: getAssignmentWorkstationCode(asset) ?? undefined,
+          currentLocation: getAssetLocationLabel(asset),
           status: asset.status,
-          isWorkstationDevice: Boolean(activeAssignment) || assetScope === "Workstation Device"
+          isWorkstationDevice: isCurrentWorkstationAsset(asset)
         };
       }),
     [safeAssets]
@@ -161,21 +157,16 @@ export function RepairReportForm({
   );
 
   const filteredOtherAssets = useMemo(() => {
-    const query = form.otherSearch.trim().toLowerCase();
+    const query = normalizeSearchText(form.otherSearch);
 
     return otherAssets.filter((asset) => {
-      const matchesType =
-        !form.otherAssetTypeFilter ||
-        (form.otherAssetTypeFilter === "Tab"
-          ? asset.assetType === "Tablet"
-          : asset.assetType === form.otherAssetTypeFilter);
+      const matchesType = matchesAssetTypeFilter(asset.assetType, form.otherAssetTypeFilter);
 
       const matchesLocation =
         !form.otherLocationFilter ||
-        normalizeText(asset.generalLocation) === normalizeText(form.otherLocationFilter) ||
-        normalizeText(asset.currentLocation) === normalizeText(form.otherLocationFilter) ||
-        normalizeText(asset.specificLocationNotes).includes(normalizeText(form.otherLocationFilter)) ||
-        normalizeText(asset.flow) === normalizeText(form.otherLocationFilter);
+        normalizeSearchText(asset.generalLocation) === normalizeSearchText(form.otherLocationFilter) ||
+        normalizeSearchText(asset.currentLocation) === normalizeSearchText(form.otherLocationFilter) ||
+        normalizeSearchText(asset.specificLocationNotes).includes(normalizeSearchText(form.otherLocationFilter));
 
       const matchesSearch =
         !query ||
@@ -196,34 +187,35 @@ export function RepairReportForm({
   }, [otherAssets, form.otherAssetTypeFilter, form.otherLocationFilter, form.otherSearch]);
 
   const flowWorkstations = useMemo(() => {
-    if (form.repairFlow === "1st Flow") {
-      return workstations.filter((workstation) => ["WS-07", "WS-08", "WS-09", "WS-10", "WS-11", "WS-12"].includes(workstation.code));
+    const flowCode = normalizeFlowCode(form.repairFlow);
+    if (!flowCode) {
+      return [];
     }
-    if (form.repairFlow === "2nd Flow") {
-      return workstations.filter((workstation) => ["WS-01", "WS-02", "WS-03", "WS-04", "WS-05", "WS-06"].includes(workstation.code));
-    }
-    return [];
+    const workstationCodes = getWorkstationCodesForFlow(flowCode);
+    return workstations.filter((workstation) => workstationCodes.includes(workstation.code));
   }, [form.repairFlow, workstations]);
 
   const workstationAssets = useMemo(() => {
-    if (!form.workstationId) return [];
-    return workstationDeviceAssets.filter((asset) => asset.currentWorkstationId === form.workstationId);
-  }, [workstationDeviceAssets, form.workstationId]);
+    const flowCode = normalizeFlowCode(form.repairFlow);
+    if (!flowCode) return [];
+
+    return workstationDeviceAssets.filter((asset) => {
+      const matchesFlow = normalizeFlowCode(asset.flow) === flowCode;
+      const matchesWorkstation = !form.workstationId || asset.currentWorkstationCode === form.workstationId;
+      return matchesFlow && matchesWorkstation;
+    });
+  }, [form.repairFlow, form.workstationId, workstationDeviceAssets]);
 
   const filteredWorkstationAssets = useMemo(() => {
-    if (!form.deviceTypeFilter) return workstationAssets;
-    return workstationAssets.filter((asset) => {
-      const normalizedAssetType = asset.assetType.toLowerCase();
-      const normalizedFilter = form.deviceTypeFilter.toLowerCase();
-      if (normalizedFilter === "tab") return normalizedAssetType === "tablet";
-      return normalizedAssetType === normalizedFilter;
-    });
+    return workstationAssets.filter((asset) =>
+      matchesAssetTypeFilter(asset.assetType, form.deviceTypeFilter)
+    );
   }, [workstationAssets, form.deviceTypeFilter]);
 
   const selectedAsset = assetOptions.find((asset) => asset.id === form.assetId);
   const canShowAssetPicker =
     form.repairScope === "WORKSTATION_DEVICE"
-      ? Boolean(form.workstationId)
+      ? Boolean(normalizeFlowCode(form.repairFlow))
       : form.repairScope === "OTHER_DEVICE";
 
   function updateField(name: string, value: string) {
@@ -256,9 +248,7 @@ export function RepairReportForm({
       repairFlow: flow,
       workstationId: "",
       deviceTypeFilter: "",
-      assetId: "",
-      replacementAssetId: "",
-      replacementDate: ""
+      assetId: ""
     }));
   }
 
@@ -278,7 +268,7 @@ export function RepairReportForm({
       assetId,
       workstationId:
         current.repairScope === "WORKSTATION_DEVICE"
-          ? asset?.currentWorkstationId || current.workstationId
+          ? asset?.currentWorkstationCode || current.workstationId
           : current.workstationId
     }));
   }
@@ -368,17 +358,20 @@ export function RepairReportForm({
     }
 
     const resolvedWorkstationId =
-      form.repairScope === "WORKSTATION_DEVICE"
-        ? form.workstationId
-        : selectedAsset?.currentWorkstationId || workstations[0]?.id || "";
+      selectedAsset?.currentWorkstationId ??
+      (selectedAsset?.currentWorkstationCode
+        ? workstations.find(
+            (workstation) => workstation.code === selectedAsset.currentWorkstationCode
+          )?.id ?? null
+        : null);
 
     if (!validateForm()) {
       setError("Please complete the required repair details.");
       return;
     }
 
-    if (!resolvedWorkstationId) {
-      setError("A workstation context could not be resolved for this repair.");
+    if (form.repairScope === "WORKSTATION_DEVICE" && !resolvedWorkstationId) {
+      setError("The selected workstation device does not have an active workstation assignment.");
       return;
     }
 
@@ -540,7 +533,7 @@ export function RepairReportForm({
                 >
                   <option value="">Select workstation</option>
                   {flowWorkstations.map((workstation) => (
-                    <option key={workstation.id} value={workstation.id}>
+                    <option key={workstation.id} value={workstation.code}>
                       {workstation.code} - {workstation.name}
                     </option>
                   ))}
@@ -594,8 +587,12 @@ export function RepairReportForm({
                       <p className="mt-1 text-sm font-medium text-[var(--text)]">{asset.assetType === "Tablet" ? "Tab" : asset.assetType}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Side</p>
-                      <p className="mt-1 text-sm font-medium text-[var(--text)]">{asset.side ?? "-"}</p>
+                      <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">
+                        {getPlacementLabel(asset.assetType)}
+                      </p>
+                      <p className="mt-1 text-sm font-medium text-[var(--text)]">
+                        {getPlacementValue({ side: asset.side, position: asset.position }) ?? "-"}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Brand / Model</p>
@@ -803,8 +800,12 @@ export function RepairReportForm({
                   <p className="mt-1 text-sm font-semibold text-[var(--text)]">{selectedAsset.currentWorkstationCode ?? "-"}</p>
                 </div>
                 <div className="rounded-2xl bg-white px-4 py-3">
-                  <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">Side</p>
-                  <p className="mt-1 text-sm font-semibold text-[var(--text)]">{selectedAsset.side ?? "-"}</p>
+                  <p className="text-xs uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {getPlacementLabel(selectedAsset.assetType)}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-[var(--text)]">
+                    {getPlacementValue({ side: selectedAsset.side, position: selectedAsset.position }) ?? "-"}
+                  </p>
                 </div>
               </>
             ) : (

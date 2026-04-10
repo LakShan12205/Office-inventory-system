@@ -4,7 +4,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getWorkstation } from "@/lib/api";
+import { getBackendWorkstation } from "@/lib/api";
 import { WorkstationDetail } from "@/lib/types";
 
 export default async function WorkstationDetailPage({
@@ -13,7 +13,7 @@ export default async function WorkstationDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const workstation = (await getWorkstation(id)) as WorkstationDetail;
+  const workstation = (await getBackendWorkstation(id)) as WorkstationDetail;
 
   return (
     <div className="space-y-5">

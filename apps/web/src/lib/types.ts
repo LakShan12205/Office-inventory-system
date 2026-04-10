@@ -85,6 +85,8 @@ export type AssetRecord = {
   purchaseDate?: string | null;
   warrantyExpiryDate?: string | null;
   status: string;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
   currentLocation?: string | null;
   currentLocationDisplay?: string | null;
   displayLocation?: string | null;
@@ -92,6 +94,7 @@ export type AssetRecord = {
   assetScope?: string | null;
   flow?: string | null;
   side?: string | null;
+  position?: string | null;
   generalLocation?: string | null;
   specificLocationNotes?: string | null;
   workstationCode?: string | null;
@@ -105,12 +108,17 @@ export type AssetRecord = {
     assignmentType: string;
     assignedDate: string;
     unassignedDate?: string | null;
+    status?: string | null;
     isActive: boolean;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
     workstation: {
       id: string;
       code: string;
       name: string;
-    };
+    } | null;
   }>;
   repairs?: RepairRecord[];
   alerts?: AlertRecord[];
@@ -181,4 +189,33 @@ export type DashboardData = {
   };
   latestAlerts: AlertRecord[];
   recentRepairs: RepairRecord[];
+};
+
+export type CurrentUser = {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  employeeId: string;
+  role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "EMPLOYEE";
+  status: "ACTIVE" | "INACTIVE";
+  mustChangePassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccessRequestRecord = {
+  id: string;
+  fullName: string;
+  employeeId: string;
+  email: string;
+  requestedUsername: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewedBy?: {
+    id: string;
+    fullName: string;
+    username: string;
+  } | null;
 };

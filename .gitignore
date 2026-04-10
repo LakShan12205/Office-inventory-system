@@ -1,12 +1,52 @@
-node_modules
-.next
-dist
-build
-.turbo
-.env
-.env.local
-coverage
-apps/api/generated
-apps/api/prisma/dev.db
-*.log
+# Dependencies
+node_modules/
 
+# Next.js
+.next/
+out/
+.turbo/
+
+# Build
+dist/
+build/
+
+# Environment files (VERY IMPORTANT)
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage
+coverage/
+
+# Prisma
+apps/api/generated/
+apps/api/prisma/dev.db
+apps/api/prisma/dev.db-journal
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Uploads / user files (VERY IMPORTANT)
+uploads/
+public/uploads/
+
+# Temp files
+tmp/
+temp/
+
+# Backup files (VERY IMPORTANT)
+*.sql
+*.zip
+*.bak
+*.backup

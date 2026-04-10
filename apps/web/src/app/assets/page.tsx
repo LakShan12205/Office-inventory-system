@@ -2,6 +2,7 @@ import Link from "next/link";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { AssetArchiveButton } from "@/components/assets/asset-archive-button";
 import { getAssets } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
@@ -380,6 +381,7 @@ export default async function AssetsPage({
             <option value="IN_REPAIR">In Repair</option>
             <option value="IN_STORE">In Store</option>
             <option value="DAMAGED">Damaged</option>
+            <option value="ARCHIVED">Archived</option>
           </select>
           <select
             name="location"
@@ -456,7 +458,8 @@ export default async function AssetsPage({
               "Type",
               "Brand / Model",
               "Status",
-              "Location"
+              "Location",
+              "Actions"
             ]}
           >
             {assets.map((asset, index) => {
@@ -502,6 +505,13 @@ export default async function AssetsPage({
                   </td>
                   <td className="px-4 py-4 text-sm text-[var(--muted)]">
                     <Link href={href}>{displayLocation}</Link>
+                  </td>
+                  <td className="px-4 py-4 text-sm">
+                    <AssetArchiveButton
+                      assetId={asset.id}
+                      assetCode={asset.assetCode ?? "Unknown"}
+                      assetStatus={asset.status ?? "UNKNOWN"}
+                    />
                   </td>
                 </tr>
               );

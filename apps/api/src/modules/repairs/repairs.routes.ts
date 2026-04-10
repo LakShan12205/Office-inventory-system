@@ -2,16 +2,17 @@ import { Router } from "express";
 import {
   repairPayloadSchema,
   repairQuerySchema,
+  repairReturnSchema,
   repairUpdateSchema
 } from "../shared/inventory.schemas.js";
-import { inventoryRepository } from "../shared/inventory.repository.js";
+import * as inventoryService from "../shared/inventory.service.js";
 
 export const repairsRouter = Router();
 
 repairsRouter.get("/", async (req, res, next) => {
   try {
     const filters = repairQuerySchema.parse(req.query);
-    const repairs = await inventoryRepository.listRepairs(filters);
+    const repairs = await inventoryService.listRepairs(filters);
     res.json(repairs);
   } catch (error) {
     next(error);
@@ -21,7 +22,7 @@ repairsRouter.get("/", async (req, res, next) => {
 repairsRouter.post("/", async (req, res, next) => {
   try {
     const payload = repairPayloadSchema.parse(req.body);
-    const repair = await inventoryRepository.createRepair(payload);
+    const repair = await inventoryService.createRepair(payload);
     res.status(201).json(repair);
   } catch (error) {
     next(error);
@@ -31,7 +32,17 @@ repairsRouter.post("/", async (req, res, next) => {
 repairsRouter.put("/:id", async (req, res, next) => {
   try {
     const payload = repairUpdateSchema.parse(req.body);
-    const repair = await inventoryRepository.updateRepair(req.params.id, payload);
+    const repair = await inventoryService.updateRepair(req.params.id, payload);
+    res.json(repair);
+  } catch (error) {
+    next(error);
+  }
+});
+
+repairsRouter.post("/:id/return", async (req, res, next) => {
+  try {
+    const payload = repairReturnSchema.parse(req.body);
+    const repair = await inventoryService.returnRepair(req.params.id, payload);
     res.json(repair);
   } catch (error) {
     next(error);

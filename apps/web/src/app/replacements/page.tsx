@@ -1,7 +1,7 @@
 import { ReplacementRecordsList } from "@/components/replacements/replacement-records-list";
 import { ReplacementsWorkspace } from "@/components/replacements/replacements-workspace";
 import { PageHeader } from "@/components/ui/page-header";
-import { getAssets, getReplacements } from "@/lib/api";
+import { getAssets, getBackendReplacements } from "@/lib/api";
 import { AssetRecord, ReplacementRecord } from "@/lib/types";
 
 function normalizeAssets(input: unknown): AssetRecord[] {
@@ -29,7 +29,7 @@ export default async function ReplacementsPage({
     typeof params?.q === "string" && params.q.trim() ? params.q : undefined;
 
   if (statusFilter) {
-    const replacements = await getReplacements();
+    const replacements = await getBackendReplacements();
 
     return (
       <div className="space-y-5">
@@ -48,7 +48,7 @@ export default async function ReplacementsPage({
 
   const [assets, replacements] = await Promise.all([
     getAssets("?pageSize=500"),
-    getReplacements()
+    getBackendReplacements()
   ]);
 
   return (

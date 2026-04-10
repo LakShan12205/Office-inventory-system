@@ -1,6 +1,6 @@
 import { RepairReportForm } from "@/components/forms/repair-report-form";
 import { PageHeader } from "@/components/ui/page-header";
-import { getAssets, getWorkstations } from "@/lib/api";
+import { getAssets, getBackendWorkstations } from "@/lib/api";
 import { AssetRecord, WorkstationListItem } from "@/lib/types";
 
 function normalizeAssets(input: unknown): AssetRecord[] {
@@ -29,7 +29,7 @@ function normalizeAssets(input: unknown): AssetRecord[] {
 
 export default async function NewRepairPage() {
   const [workstations, assets] = await Promise.all([
-    getWorkstations(),
+    getBackendWorkstations(),
     getAssets("?pageSize=500")
   ]);
 
