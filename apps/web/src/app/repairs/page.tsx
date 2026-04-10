@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RepairReturnButton } from "@/components/repairs/repair-return-button";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -155,7 +156,8 @@ export default async function RepairsPage({
             "Fault",
             "Repair status",
             "Expected return",
-            "Replacement"
+            "Replacement",
+            "Actions"
           ]}
         >
           {repairs.map((repair) => (
@@ -178,6 +180,9 @@ export default async function RepairsPage({
                 {repair.replacementLog
                   ? repair.replacementLog.replacementAsset.assetCode
                   : "None"}
+              </td>
+              <td className="px-4 py-4 text-sm">
+                <RepairReturnButton repair={repair} />
               </td>
             </tr>
           ))}

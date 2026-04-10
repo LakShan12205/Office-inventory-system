@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { DashboardFooter } from "@/components/dashboard-footer";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
 import { getDashboard } from "@/lib/api";
@@ -246,6 +247,8 @@ export default async function DashboardPage() {
           ))}
         </div>
       </SectionCard>
+
+      <DashboardFooter />
     </div>
   );
 }

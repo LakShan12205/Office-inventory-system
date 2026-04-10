@@ -2,6 +2,8 @@ import createError from "http-errors";
 import { prisma } from "../../db/prisma";
 
 const CURRENT_WORKSTATION_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
+const LIVE_ASSIGNABLE_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
+const ACTIVE_REPAIR_STATUSES = ["REPORTED", "SENT", "IN_PROGRESS"] as const;
 
 const currentWorkstationAssignmentWhere = {
   isActive: true,
@@ -25,7 +27,10 @@ const workstationInclude = {
     orderBy: { assignedDate: "desc" as const }
   },
   repairs: {
-    where: { deletedAt: null },
+    where: {
+      deletedAt: null,
+      status: { in: [...ACTIVE_REPAIR_STATUSES] }
+    },
     include: {
       asset: { include: { assetType: true } },
       replacementLog: {
@@ -128,6 +133,89 @@ function displayLocationFromAssignment(assignment?: {
   return [assignment.specificLocationNotes || assignment.generalLocation, assignment.side, assignment.position]
     .filter(Boolean)
     .join(" / ") || null;
+}
+
+function supportsLiveAssignment(status: string) {
+  return LIVE_ASSIGNABLE_ASSET_STATUSES.includes(
+    status as (typeof LIVE_ASSIGNABLE_ASSET_STATUSES)[number]
+  );
+}
+
+function assertAssignmentAllowedForStatus(
+  status: string,
+  assignment?: {
+    workstationCode?: string | null;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
+    status?: "ACTIVE" | "INACTIVE";
+  } | null
+) {
+  if (!assignment) {
+    return;
+  }
+
+  if (!supportsLiveAssignment(status)) {
+    throw createError(
+      409,
+      "Only live assets with ACTIVE or TEMPORARY_REPLACEMENT status can have a current assignment."
+    );
+  }
+}
+
+function assignmentPlacementSnapshot(assignment?: {
+  workstationId?: string | null;
+  generalLocation?: string | null;
+  specificLocationNotes?: string | null;
+  side?: string | null;
+  position?: string | null;
+  status?: string | null;
+  isActive?: boolean | null;
+  startDate?: Date | string | null;
+} | null) {
+  if (!assignment) {
+    return null;
+  }
+
+  return {
+    workstationId: assignment.workstationId ?? null,
+    generalLocation: assignment.generalLocation ?? null,
+    specificLocationNotes: assignment.specificLocationNotes ?? null,
+    side: assignment.side ?? null,
+    position: assignment.position ?? null,
+    status: assignment.status ?? "ACTIVE",
+    isActive:
+      assignment.isActive ??
+      (assignment.status ? assignment.status === "ACTIVE" : true),
+    startDate: assignment.startDate
+      ? new Date(assignment.startDate).toISOString()
+      : null
+  };
+}
+
+function assignmentPlacementChanged(
+  currentAssignment: ReturnType<typeof assignmentPlacementSnapshot>,
+  nextAssignment: ReturnType<typeof assignmentPlacementSnapshot>
+) {
+  if (!currentAssignment && !nextAssignment) {
+    return false;
+  }
+
+  if (!currentAssignment || !nextAssignment) {
+    return true;
+  }
+
+  return (
+    currentAssignment.workstationId !== nextAssignment.workstationId ||
+    currentAssignment.generalLocation !== nextAssignment.generalLocation ||
+    currentAssignment.specificLocationNotes !== nextAssignment.specificLocationNotes ||
+    currentAssignment.side !== nextAssignment.side ||
+    currentAssignment.position !== nextAssignment.position ||
+    currentAssignment.status !== nextAssignment.status ||
+    currentAssignment.isActive !== nextAssignment.isActive ||
+    currentAssignment.startDate !== nextAssignment.startDate
+  );
 }
 
 function mapAssetRecord<T extends {
@@ -442,9 +530,16 @@ export async function syncAlerts() {
 }
 
 export async function getDashboardData() {
-  await syncAlerts();
+  try {
+    // Alert sync is important, but the dashboard should not 500 just because
+    // one historical repair/alert record is inconsistent. Keep the summary
+    // page available while we isolate bad operational data separately.
+    await syncAlerts();
+  } catch (error) {
+    console.error("Dashboard alert sync failed:", error);
+  }
 
-  const [workstations, assets, repairsInRepair, replacements, overdueRepairs, alerts, recentRepairs] =
+  const [workstations, assets, repairsInRepair, replacements, overdueRepairs, followUpAlerts, alerts, recentRepairs] =
     await Promise.all([
       prisma.workstation.count({ where: { deletedAt: null } }),
       prisma.asset.count({ where: { deletedAt: null } }),
@@ -463,6 +558,7 @@ export async function getDashboardData() {
           status: { not: "CLOSED" }
         }
       }),
+      prisma.alert.count(),
       prisma.alert.findMany({
         include: alertInclude,
         orderBy: [{ priority: "desc" }, { alertDate: "desc" }],
@@ -485,7 +581,8 @@ export async function getDashboardData() {
       totalAssets: assets,
       machinesInRepair: repairsInRepair,
       activeTemporaryReplacements: replacements,
-      overdueRepairs
+      overdueRepairs,
+      followUpAlerts
     },
     latestAlerts: alerts,
     recentRepairs
@@ -511,7 +608,12 @@ export async function listWorkstations(filters: { search?: string; status?: stri
       _count: {
         select: {
           assets: { where: currentWorkstationAssignmentWhere },
-          repairs: { where: { deletedAt: null } }
+          repairs: {
+            where: {
+              deletedAt: null,
+              status: { in: [...ACTIVE_REPAIR_STATUSES] }
+            }
+          }
         }
       },
       assets: {
@@ -1058,6 +1160,153 @@ export async function updateRepair(id: string, input: Record<string, unknown>) {
   return prisma.repair.findUniqueOrThrow({ where: { id }, include: repairInclude });
 }
 
+export async function returnRepair(
+  id: string,
+  input: {
+    action: "RETURN_TO_WORKSTATION" | "MOVE_TO_STORE";
+    repairedBy: string;
+    notes?: string | null;
+  }
+) {
+  const returnedAt = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    const repair = await tx.repair.findUnique({
+      where: { id },
+      include: {
+        workstation: true,
+        asset: true,
+        replacementLog: {
+          include: {
+            replacementAsset: true,
+            originalAsset: true
+          }
+        }
+      }
+    });
+
+    if (!repair || repair.deletedAt) {
+      throw createError(404, "Repair not found.");
+    }
+
+    if (repair.status === "CLOSED") {
+      throw createError(409, "This repair is already closed.");
+    }
+
+    await tx.repair.update({
+      where: { id: repair.id },
+      data: {
+        status: "CLOSED",
+        actualReturnDate: returnedAt,
+        handledBy: input.repairedBy,
+        notes: input.notes ?? repair.notes ?? null
+      }
+    });
+
+    if (repair.replacementLog && repair.replacementLog.status === "ACTIVE") {
+      await tx.replacementLog.update({
+        where: { repairId: repair.id },
+        data: {
+          status: "REMOVED",
+          replacementReturnDate: returnedAt,
+          notes: input.notes ?? repair.replacementLog.notes ?? null
+        }
+      });
+
+      await tx.workstationAsset.updateMany({
+        where: {
+          assetId: repair.replacementLog.replacementAssetId,
+          workstationId: repair.workstationId,
+          isActive: true
+        },
+        data: {
+          status: "INACTIVE",
+          isActive: false,
+          endDate: returnedAt,
+          unassignedDate: returnedAt
+        }
+      });
+
+      await tx.asset.update({
+        where: { id: repair.replacementLog.replacementAssetId },
+        data: {
+          status: "IN_STORE",
+          currentLocation: "Main Store"
+        }
+      });
+    }
+
+    if (input.action === "RETURN_TO_WORKSTATION") {
+      const existingAssignment = await tx.workstationAsset.findFirst({
+        where: {
+          assetId: repair.assetId,
+          workstationId: repair.workstationId,
+          isActive: true
+        }
+      });
+
+      if (!existingAssignment) {
+        const lastKnownAssignment = await tx.workstationAsset.findFirst({
+          where: {
+            assetId: repair.assetId,
+            workstationId: repair.workstationId
+          },
+          orderBy: { assignedDate: "desc" }
+        });
+
+        await tx.workstationAsset.create({
+          data: {
+            workstationId: repair.workstationId,
+            assetId: repair.assetId,
+            assignmentType: "PRIMARY",
+            status: "ACTIVE",
+            generalLocation: lastKnownAssignment?.generalLocation ?? null,
+            specificLocationNotes: lastKnownAssignment?.specificLocationNotes ?? null,
+            side: lastKnownAssignment?.side ?? null,
+            position: lastKnownAssignment?.position ?? null,
+            assignedDate: returnedAt,
+            startDate: returnedAt,
+            isActive: true,
+            notes: "Reassigned after repair return"
+          }
+        });
+      }
+
+      await tx.asset.update({
+        where: { id: repair.assetId },
+        data: {
+          status: "ACTIVE",
+          currentLocation: repair.workstation.code
+        }
+      });
+    } else {
+      await tx.workstationAsset.updateMany({
+        where: {
+          assetId: repair.assetId,
+          isActive: true
+        },
+        data: {
+          status: "INACTIVE",
+          isActive: false,
+          endDate: returnedAt,
+          unassignedDate: returnedAt
+        }
+      });
+
+      await tx.asset.update({
+        where: { id: repair.assetId },
+        data: {
+          status: "IN_STORE",
+          currentLocation: "Main Store"
+        }
+      });
+    }
+  });
+
+  await syncAlerts();
+  return prisma.repair.findUniqueOrThrow({ where: { id }, include: repairInclude });
+}
+
 export async function listReplacements() {
   await syncAlerts();
   return prisma.replacementLog.findMany({
@@ -1439,6 +1688,8 @@ export async function createAsset(input: {
     throw createError(404, "Selected workstation was not found.");
   }
 
+  assertAssignmentAllowedForStatus(input.status, input.assignment);
+
   const asset = await prisma.asset.create({
     data: {
       assetCode: input.assetCode,
@@ -1465,7 +1716,7 @@ export async function createAsset(input: {
     }
   });
 
-  if (input.assignment && input.status !== "IN_STORE") {
+  if (input.assignment) {
     await prisma.workstationAsset.create({
       data: {
         assetId: asset.id,
@@ -1582,6 +1833,35 @@ export async function updateAsset(id: string, input: {
     throw createError(404, "Selected workstation was not found.");
   }
 
+  assertAssignmentAllowedForStatus(input.status, input.assignment);
+
+  const activeAssignment =
+    existingAsset.workstationAssignments.find(
+      (assignment) => assignment.status === "ACTIVE" || assignment.isActive
+    ) ?? null;
+  const preservedAssignment =
+    input.assignment === undefined && supportsLiveAssignment(input.status)
+      ? assignmentPlacementSnapshot(activeAssignment)
+      : null;
+  const nextAssignment =
+    preservedAssignment ??
+    (input.assignment && supportsLiveAssignment(input.status)
+      ? assignmentPlacementSnapshot({
+          workstationId: workstation?.id ?? null,
+          generalLocation: input.assignment.generalLocation ?? null,
+          specificLocationNotes: input.assignment.specificLocationNotes ?? null,
+          side: input.assignment.side ?? null,
+          position: input.assignment.position ?? null,
+          status: input.assignment.status ?? "ACTIVE",
+          isActive: (input.assignment.status ?? "ACTIVE") === "ACTIVE",
+          startDate: input.assignment.startDate ?? activeAssignment?.startDate ?? null
+        })
+      : null);
+  const placementChanged = assignmentPlacementChanged(
+    assignmentPlacementSnapshot(activeAssignment),
+    nextAssignment
+  );
+
   await prisma.asset.update({
     where: { id },
     data: {
@@ -1602,17 +1882,20 @@ export async function updateAsset(id: string, input: {
     },
   });
 
-  await prisma.workstationAsset.updateMany({
-    where: { assetId: id, status: "ACTIVE" },
-    data: {
-      status: "INACTIVE",
-      isActive: false,
-      endDate: new Date(),
-      unassignedDate: new Date()
-    }
-  });
+  // Preserve assignment history for real placement changes only.
+  if (placementChanged && activeAssignment) {
+    await prisma.workstationAsset.updateMany({
+      where: { assetId: id, status: "ACTIVE" },
+      data: {
+        status: "INACTIVE",
+        isActive: false,
+        endDate: new Date(),
+        unassignedDate: new Date()
+      }
+    });
+  }
 
-  if (input.assignment && input.status !== "IN_STORE") {
+  if (placementChanged && input.assignment && supportsLiveAssignment(input.status)) {
     await prisma.workstationAsset.create({
       data: {
         assetId: id,

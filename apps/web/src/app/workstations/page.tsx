@@ -5,6 +5,8 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { getWorkstations } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
+export const dynamic = "force-dynamic";
+
 type WorkstationPageItem = {
   id: string;
   code: string;

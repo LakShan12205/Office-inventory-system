@@ -190,3 +190,32 @@ export type DashboardData = {
   latestAlerts: AlertRecord[];
   recentRepairs: RepairRecord[];
 };
+
+export type CurrentUser = {
+  id: string;
+  fullName: string;
+  username: string;
+  email: string;
+  employeeId: string;
+  role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "EMPLOYEE";
+  status: "ACTIVE" | "INACTIVE";
+  mustChangePassword: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AccessRequestRecord = {
+  id: string;
+  fullName: string;
+  employeeId: string;
+  email: string;
+  requestedUsername: string;
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewedBy?: {
+    id: string;
+    fullName: string;
+    username: string;
+  } | null;
+};

@@ -151,6 +151,12 @@ export const repairUpdateSchema = repairPayloadSchema.partial().extend({
   replacementStatus: replacementStatusSchema.optional()
 });
 
+export const repairReturnSchema = z.object({
+  action: z.enum(["RETURN_TO_WORKSTATION", "MOVE_TO_STORE"]),
+  repairedBy: z.string().trim().min(2),
+  notes: z.string().trim().optional().nullable()
+});
+
 export const replacementPayloadSchema = z.object({
   originalAssetId: z.string().trim().min(1),
   replacementAssetId: z.string().trim().min(1),

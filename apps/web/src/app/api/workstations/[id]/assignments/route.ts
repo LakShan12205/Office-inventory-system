@@ -1,24 +1,31 @@
-import { createWorkstationAssignment } from "../../../_lib/mock-data";
-import { handleRoute } from "../../../_lib/route-utils";
+import { NextResponse } from "next/server";
 
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  return handleRoute(async () => {
-    const { id } = await context.params;
-    const body = (await request.json()) as {
-      assetId: string;
-      assignmentType?: "PRIMARY" | "TEMPORARY_REPLACEMENT" | "SPARE";
-      assignedDate?: string;
-      notes?: string | null;
-    };
+  const { id } = await context.params;
+  const backendBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api";
+  const backendUrl = `${backendBase.replace(/\/$/, "")}/workstations/${id}/assignments`;
+  const body = await request.text();
 
-    return createWorkstationAssignment(id, {
-      assetId: body.assetId,
-      assignmentType: body.assignmentType ?? "PRIMARY",
-      assignedDate: body.assignedDate,
-      notes: body.notes ?? null
-    });
+  const response = await fetch(backendUrl, {
+    method: "POST",
+    cache: "no-store",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      cookie: request.headers.get("cookie") ?? ""
+    },
+    body
+  });
+
+  const text = await response.text();
+
+  return new NextResponse(text, {
+    status: response.status,
+    headers: {
+      "Content-Type": response.headers.get("content-type") ?? "application/json"
+    }
   });
 }
