@@ -169,7 +169,7 @@ export const getRepairs = cache(async (query = "") => request(`/repairs${query}`
 export async function getAlerts(query = "") {
   return request(`/alerts${query}`, undefined, "backend");
 }
-export const getReplacements = cache(async () => request("/replacements"));
+export const getReplacements = cache(async () => request("/replacements", undefined, "backend"));
 export const getBackendReplacements = cache(async () => request("/replacements", undefined, "backend"));
 
 export async function createReplacement(payload: unknown) {
@@ -217,6 +217,18 @@ export async function updateAsset(id: string, payload: unknown) {
 export async function archiveAsset(id: string) {
   return request(`/assets/${id}/archive`, {
     method: "POST"
+  }, "backend");
+}
+
+export async function deleteAssetPermanently(id: string) {
+  return request<{ success: true }>(`/assets/${id}`, {
+    method: "DELETE"
+  }, "backend");
+}
+
+export async function deleteAllAssetsPermanently() {
+  return request<{ deleted: number; skipped: number }>("/assets", {
+    method: "DELETE"
   }, "backend");
 }
 

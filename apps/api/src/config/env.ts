@@ -16,7 +16,7 @@ const envSchema = z.object({
   NEXT_PUBLIC_API_URL: z.string().url().optional(),
   NEXT_PUBLIC_SITE_URL: z.string().url().optional(),
   PORT: z.coerce.number().default(4000),
-  USE_MOCK_DATA: z.coerce.boolean().default(true)
+  USE_MOCK_DATA: z.coerce.boolean().default(false)
 });
 
 const parsedEnv = envSchema.parse(rawEnv);

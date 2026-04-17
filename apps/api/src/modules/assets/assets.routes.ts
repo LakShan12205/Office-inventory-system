@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { assetPayloadSchema, assetQuerySchema } from "../shared/inventory.schemas.js";
 import * as inventoryService from "../shared/inventory.service.js";
+import { requireAdmin } from "../../middleware/auth.js";
 
 export const assetsRouter = Router();
 
@@ -66,6 +67,24 @@ assetsRouter.post("/:id/archive", async (req, res, next) => {
   try {
     const asset = await inventoryService.archiveAsset(req.params.id);
     res.json(asset);
+  } catch (error) {
+    next(error);
+  }
+});
+
+assetsRouter.delete("/:id", requireAdmin, async (req, res, next) => {
+  try {
+    const result = await inventoryService.deleteAsset(String(req.params.id));
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+assetsRouter.delete("/", requireAdmin, async (_req, res, next) => {
+  try {
+    const result = await inventoryService.deleteAllRemovableAssets();
+    res.json(result);
   } catch (error) {
     next(error);
   }

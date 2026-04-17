@@ -74,6 +74,16 @@ const assetAssignmentInclude = {
   workstation: true
 };
 
+const assetDeletionDependencySelect = {
+  workstationAssignments: true,
+  repairs: {
+    where: { deletedAt: null }
+  },
+  originalReplacementLogs: true,
+  replacementLogs: true,
+  alerts: true
+} as const;
+
 function startOfToday() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -798,6 +808,89 @@ export async function archiveAsset(id: string) {
   });
 
   return mapAssetRecord(archivedAsset);
+}
+
+function assetHasDeletionDependencies(asset: {
+  _count: {
+    workstationAssignments: number;
+    repairs: number;
+    originalReplacementLogs: number;
+    replacementLogs: number;
+    alerts: number;
+  };
+}) {
+  return (
+    asset._count.workstationAssignments > 0 ||
+    asset._count.repairs > 0 ||
+    asset._count.originalReplacementLogs > 0 ||
+    asset._count.replacementLogs > 0 ||
+    asset._count.alerts > 0
+  );
+}
+
+async function getAssetDeletionRecord(id: string) {
+  return prisma.asset.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      assetCode: true,
+      deletedAt: true,
+      _count: {
+        select: assetDeletionDependencySelect
+      }
+    }
+  });
+}
+
+export async function deleteAsset(id: string) {
+  const asset = await getAssetDeletionRecord(id);
+
+  if (!asset || asset.deletedAt) {
+    throw createError(404, "Asset not found.");
+  }
+
+  if (assetHasDeletionDependencies(asset)) {
+    throw createError(
+      409,
+      "This asset has related history and cannot be permanently deleted."
+    );
+  }
+
+  await prisma.asset.delete({
+    where: { id }
+  });
+
+  return { success: true };
+}
+
+export async function deleteAllRemovableAssets() {
+  const assets = await prisma.asset.findMany({
+    where: { deletedAt: null },
+    select: {
+      id: true,
+      _count: {
+        select: assetDeletionDependencySelect
+      }
+    }
+  });
+
+  const removableAssetIds = assets
+    .filter((asset) => !assetHasDeletionDependencies(asset))
+    .map((asset) => asset.id);
+
+  const deleteResult =
+    removableAssetIds.length > 0
+      ? await prisma.asset.deleteMany({
+          where: {
+            id: { in: removableAssetIds }
+          }
+        })
+      : { count: 0 };
+
+  return {
+    deleted: deleteResult.count,
+    skipped: assets.length - deleteResult.count
+  };
 }
 
 export async function getAssetById(id: string) {

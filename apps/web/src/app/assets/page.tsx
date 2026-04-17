@@ -3,7 +3,9 @@ import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { AssetArchiveButton } from "@/components/assets/asset-archive-button";
-import { getAssets } from "@/lib/api";
+import { AssetDeleteButton } from "@/components/assets/asset-delete-button";
+import { AssetsBulkDeleteButton } from "@/components/assets/assets-bulk-delete-button";
+import { getAssets, getCurrentUser } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
 type AssetPageRecord = {
@@ -236,10 +238,17 @@ export default async function AssetsPage({
     end: 0
   };
 
+  const [assetsResult, currentUserResult] = await Promise.allSettled([
+    getAssets(query.toString() ? `?${query.toString()}` : ""),
+    getCurrentUser()
+  ]);
+
   try {
-    const result = (await getAssets(
-      query.toString() ? `?${query.toString()}` : ""
-    )) as AssetPageRecord[] | AssetsResponse;
+    if (assetsResult.status !== "fulfilled") {
+      throw assetsResult.reason;
+    }
+
+    const result = assetsResult.value as AssetPageRecord[] | AssetsResponse;
 
     if ("items" in (result as AssetsResponse) && Array.isArray((result as AssetsResponse).items)) {
       assets = (result as AssetsResponse).items;
@@ -259,6 +268,10 @@ export default async function AssetsPage({
     console.error("Assets error:", error);
     return <div>Failed to load assets</div>;
   }
+
+  const isAdmin =
+    currentUserResult.status === "fulfilled" &&
+    currentUserResult.value.user.role === "ADMIN";
 
   const activeAssets = assets.filter((asset) => asset.status === "ACTIVE").length;
   const repairAssets = assets.filter((asset) => asset.status === "IN_REPAIR").length;
@@ -308,13 +321,16 @@ export default async function AssetsPage({
         title="Assets"
         description="Search and manage all assets."
         action={
-          <Link
-            href="/assets/new"
-            className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,var(--nav),var(--accent))] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(24,49,83,0.20)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_45px_rgba(24,49,83,0.26)]"
-          >
-            <PlusIcon />
-            Add Asset
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin ? <AssetsBulkDeleteButton /> : null}
+            <Link
+              href="/assets/new"
+              className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,var(--nav),var(--accent))] px-5 py-3 text-sm font-semibold text-white shadow-[0_18px_36px_rgba(24,49,83,0.20)] transition hover:-translate-y-0.5 hover:shadow-[0_22px_45px_rgba(24,49,83,0.26)]"
+            >
+              <PlusIcon />
+              Add Asset
+            </Link>
+          </div>
         }
       />
 
@@ -507,11 +523,19 @@ export default async function AssetsPage({
                     <Link href={href}>{displayLocation}</Link>
                   </td>
                   <td className="px-4 py-4 text-sm">
-                    <AssetArchiveButton
-                      assetId={asset.id}
-                      assetCode={asset.assetCode ?? "Unknown"}
-                      assetStatus={asset.status ?? "UNKNOWN"}
-                    />
+                    <div className="flex items-center gap-2">
+                      <AssetArchiveButton
+                        assetId={asset.id}
+                        assetCode={asset.assetCode ?? "Unknown"}
+                        assetStatus={asset.status ?? "UNKNOWN"}
+                      />
+                      {isAdmin ? (
+                        <AssetDeleteButton
+                          assetId={asset.id}
+                          assetCode={asset.assetCode ?? "Unknown"}
+                        />
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               );
