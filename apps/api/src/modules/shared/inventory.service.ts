@@ -1,5 +1,5 @@
 import createError from "http-errors";
-import { prisma } from "../../db/prisma";
+import { prisma } from "../../db/prisma.js";
 
 const CURRENT_WORKSTATION_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
 const LIVE_ASSIGNABLE_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
