@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import helmet from "helmet";
+import { createRequire } from "module";
 import morgan from "morgan";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requireAuth, requirePasswordChangeResolved } from "./middleware/auth.js";
@@ -13,6 +13,9 @@ import { repairsRouter } from "./modules/repairs/repairs.routes.js";
 import { replacementsRouter } from "./modules/replacements/replacements.routes.js";
 import { workstationsRouter } from "./modules/workstations/workstations.routes.js";
 import { env } from "./config/env.js";
+
+const require = createRequire(import.meta.url);
+const helmet = require("helmet");
 
 export const app = express();
 
