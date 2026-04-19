@@ -5,6 +5,15 @@ import { requireAdmin } from "../../middleware/auth.js";
 
 export const assetsRouter = Router();
 
+const createOrReplaceAssetSchema = assetPayloadSchema.required({
+  assetCode: true,
+  assetTypeId: true,
+  brand: true,
+  model: true,
+  serialNumber: true,
+  status: true
+});
+
 assetsRouter.get("/", async (req, res, next) => {
   try {
     const filters = assetQuerySchema.parse(req.query);
@@ -35,7 +44,7 @@ assetsRouter.get("/:id", async (req, res, next) => {
 
 assetsRouter.post("/", async (req, res, next) => {
   try {
-    const payload = assetPayloadSchema.parse(req.body);
+    const payload = createOrReplaceAssetSchema.parse(req.body);
     const asset = await inventoryService.createAsset(payload);
     res.status(201).json(asset);
   } catch (error) {
@@ -45,7 +54,7 @@ assetsRouter.post("/", async (req, res, next) => {
 
 assetsRouter.put("/:id", async (req, res, next) => {
   try {
-    const payload = assetPayloadSchema.parse(req.body);
+    const payload = createOrReplaceAssetSchema.parse(req.body);
     const asset = await inventoryService.updateAsset(req.params.id, payload);
     res.json(asset);
   } catch (error) {
