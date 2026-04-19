@@ -29,14 +29,59 @@ import { accessRequestRateLimiter, loginRateLimiter } from "../../middleware/rat
 export const authRouter = Router();
 export const accessRequestsRouter = Router();
 
+type LoginPayload = Parameters<typeof login>[0];
+type ChangePasswordPayload = Parameters<typeof changePassword>[1];
+type SubmitAccessRequestPayload = Parameters<typeof submitAccessRequest>[0];
+
+function toLoginPayload(input: ReturnType<typeof loginSchema.parse>): LoginPayload {
+  if (!input.username || !input.password) {
+    throw new Error("Username and password are required");
+  }
+
+  return {
+    username: input.username,
+    password: input.password
+  };
+}
+
+function toChangePasswordPayload(
+  input: ReturnType<typeof changePasswordSchema.parse>
+): ChangePasswordPayload {
+  if (!input.currentPassword || !input.newPassword) {
+    throw new Error("Current password and new password are required");
+  }
+
+  return {
+    currentPassword: input.currentPassword,
+    newPassword: input.newPassword
+  };
+}
+
+function toAccessRequestPayload(
+  input: ReturnType<typeof accessRequestSchema.parse>
+): SubmitAccessRequestPayload {
+  if (!input.fullName || !input.employeeId || !input.email || !input.requestedUsername) {
+    throw new Error("All access request fields are required");
+  }
+
+  return {
+    fullName: input.fullName,
+    employeeId: input.employeeId,
+    email: input.email,
+    requestedUsername: input.requestedUsername
+  };
+}
+
 authRouter.post("/login", loginRateLimiter, async (req, res, next) => {
   try {
     console.info("Login request received.", {
       username: typeof req.body?.username === "string" ? req.body.username : undefined
     });
 
-    const payload = loginSchema.parse(req.body);
+    const parsed = loginSchema.parse(req.body);
+    const payload = toLoginPayload(parsed);
     const user = await login(payload);
+
     const token = signAuthToken({
       id: user.id,
       username: user.username,
@@ -81,8 +126,10 @@ authRouter.get("/me", requireAuth, async (req, res, next) => {
 
 authRouter.post("/change-password", requireAuth, requireTrustedOrigin, async (req, res, next) => {
   try {
-    const payload = changePasswordSchema.parse(req.body);
+    const parsed = changePasswordSchema.parse(req.body);
+    const payload = toChangePasswordPayload(parsed);
     const user = await changePassword(req.authUser!.id, payload);
+
     const token = signAuthToken({
       id: user.id,
       username: user.username,
@@ -100,8 +147,10 @@ authRouter.post("/change-password", requireAuth, requireTrustedOrigin, async (re
 
 accessRequestsRouter.post("/", accessRequestRateLimiter, async (req, res, next) => {
   try {
-    const payload = accessRequestSchema.parse(req.body);
+    const parsed = accessRequestSchema.parse(req.body);
+    const payload = toAccessRequestPayload(parsed);
     const request = await submitAccessRequest(payload);
+
     res.status(201).json({
       request,
       message:
