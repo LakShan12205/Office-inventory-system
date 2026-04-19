@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import helmet from "helmet";
+import { helmet } from "helmet";
 import morgan from "morgan";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requireAuth, requirePasswordChangeResolved } from "./middleware/auth.js";
