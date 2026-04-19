@@ -43,12 +43,10 @@ function normalizeApiBase(url: string) {
 }
 
 function getWebApiBaseUrl() {
-  // Browser side
   if (typeof window !== "undefined") {
     return "/api";
   }
 
-  // Server side
   if (process.env.NEXT_PUBLIC_SITE_URL) {
     return `${process.env.NEXT_PUBLIC_SITE_URL}/api`;
   }
@@ -137,6 +135,7 @@ async function request<T>(
 export async function getDashboard() {
   return request("/dashboard", undefined, "backend");
 }
+
 // Workstation views depend on mutable assignment state from assets, repairs, and
 // replacements. Keep these reads uncached so every page reflects the latest
 // active assignment data.
@@ -155,8 +154,8 @@ export async function getBackendWorkstations(query = "") {
 export async function getBackendWorkstation(id: string) {
   return request(`/workstations/${id}`, undefined, "backend");
 }
-// Assets are the first module cut over to the real Express/Prisma API.
-// Keep them uncached so create/edit flows reflect the latest DB state immediately.
+
+// ASSETS USE REAL BACKEND API
 export async function getAssets(query = "") {
   return request(`/assets${query}`, undefined, "backend");
 }
@@ -164,12 +163,16 @@ export async function getAssets(query = "") {
 export async function getAsset(id: string) {
   return request(`/assets/${id}`, undefined, "backend");
 }
+
 export const getAssetTypes = cache(async () => request("/assets/types/all", undefined, "backend"));
+
 export const getRepairs = cache(async (query = "") => request(`/repairs${query}`, undefined, "backend"));
+
 export async function getAlerts(query = "") {
   return request(`/alerts${query}`, undefined, "backend");
 }
-export const getReplacements = cache(async () => request("/replacements"));
+
+export const getReplacements = cache(async () => request("/replacements", undefined, "backend"));
 export const getBackendReplacements = cache(async () => request("/replacements", undefined, "backend"));
 
 export async function createReplacement(payload: unknown) {
@@ -217,6 +220,18 @@ export async function updateAsset(id: string, payload: unknown) {
 export async function archiveAsset(id: string) {
   return request(`/assets/${id}/archive`, {
     method: "POST"
+  }, "backend");
+}
+
+export async function deleteAssetPermanently(id: string) {
+  return request<{ success: true }>(`/assets/${id}`, {
+    method: "DELETE"
+  }, "backend");
+}
+
+export async function deleteAllAssetsPermanently() {
+  return request<{ deleted: number; skipped: number }>("/assets", {
+    method: "DELETE"
   }, "backend");
 }
 

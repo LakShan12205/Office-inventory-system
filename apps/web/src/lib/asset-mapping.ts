@@ -3,8 +3,20 @@ import { AssetRecord } from "@/lib/types";
 export type FlowCode = "Flow-01" | "Flow-02";
 
 type AssetAssignment = AssetRecord["workstationAssignments"][number];
+
 const CURRENT_WORKSTATION_ASSET_STATUSES = new Set(["ACTIVE", "TEMPORARY_REPLACEMENT"]);
-const SIDE_BASED_TYPES = new Set(["monitor", "keyboard", "mouse", "tv"]);
+
+// ✅ FINAL FIXED (TV kept + Machine + UPS added)
+const SIDE_BASED_TYPES = new Set([
+  "monitor",
+  "machine",
+  "keyboard",
+  "mouse",
+  "ups",
+  "tv"
+]);
+
+// ✅ TV keeps position options
 const POSITION_BASED_TYPES = new Set(["tv"]);
 
 function normalizeAssetTypeName(value?: string | null) {
@@ -146,13 +158,23 @@ export function isNonWorkstationAsset(asset: AssetRecord) {
 }
 
 export function getAssetScopeLabel(asset: AssetRecord) {
-  return asset.assetScope ?? (isWorkstationLinkedAsset(asset) ? "Workstation Device" : "Other / Non-Workstation Device");
+  return asset.assetScope ??
+    (isWorkstationLinkedAsset(asset)
+      ? "Workstation Device"
+      : "Other / Non-Workstation Device");
 }
 
 export function getAssetLocationLabel(asset: AssetRecord) {
   const activeAssignment = getActiveAssignment(asset);
+
   if (activeAssignment?.workstation?.code) {
-    return [activeAssignment.workstation.code, activeAssignment.side, activeAssignment.position].filter(Boolean).join(" / ");
+    return [
+      activeAssignment.workstation.code,
+      activeAssignment.side,
+      activeAssignment.position
+    ]
+      .filter(Boolean)
+      .join(" / ");
   }
 
   return (
@@ -172,10 +194,12 @@ export function getAssetLocationLabel(asset: AssetRecord) {
 
 export function matchesAssetTypeFilter(assetType: string, filter?: string | null) {
   if (!filter) return true;
+
   const normalizedAssetType = assetType.trim().toLowerCase();
   const normalizedFilter = filter.trim().toLowerCase();
 
   if (normalizedFilter === "tab") return normalizedAssetType === "tablet";
+
   return normalizedAssetType === normalizedFilter;
 }
 

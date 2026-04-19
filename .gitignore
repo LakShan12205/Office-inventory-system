@@ -50,3 +50,5 @@ temp/
 *.zip
 *.bak
 *.backup
+
+*.tsbuildinfo
