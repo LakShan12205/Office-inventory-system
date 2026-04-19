@@ -5,14 +5,51 @@ import { requireAdmin } from "../../middleware/auth.js";
 
 export const assetsRouter = Router();
 
-const createOrReplaceAssetSchema = assetPayloadSchema.required({
-  assetCode: true,
-  assetTypeId: true,
-  brand: true,
-  model: true,
-  serialNumber: true,
-  status: true
-});
+type CreateAssetPayload = Parameters<typeof inventoryService.createAsset>[0];
+type UpdateAssetPayload = Parameters<typeof inventoryService.updateAsset>[1];
+
+function toCreateAssetPayload(input: ReturnType<typeof assetPayloadSchema.parse>): CreateAssetPayload {
+  if (
+    !input.assetCode ||
+    !input.assetTypeId ||
+    !input.brand ||
+    !input.model ||
+    !input.serialNumber ||
+    !input.status
+  ) {
+    throw new Error("Missing required asset fields");
+  }
+
+  return {
+    assetCode: input.assetCode,
+    assetTypeId: input.assetTypeId,
+    brand: input.brand,
+    model: input.model,
+    serialNumber: input.serialNumber,
+    specification: input.specification,
+    purchaseDate: input.purchaseDate,
+    warrantyExpiryDate: input.warrantyExpiryDate,
+    status: input.status,
+    currentLocation: input.currentLocation,
+    notes: input.notes
+  };
+}
+
+function toUpdateAssetPayload(input: ReturnType<typeof assetPayloadSchema.parse>): UpdateAssetPayload {
+  return {
+    assetCode: input.assetCode,
+    assetTypeId: input.assetTypeId,
+    brand: input.brand,
+    model: input.model,
+    serialNumber: input.serialNumber,
+    specification: input.specification,
+    purchaseDate: input.purchaseDate,
+    warrantyExpiryDate: input.warrantyExpiryDate,
+    status: input.status,
+    currentLocation: input.currentLocation,
+    notes: input.notes
+  } as UpdateAssetPayload;
+}
 
 assetsRouter.get("/", async (req, res, next) => {
   try {
@@ -44,7 +81,8 @@ assetsRouter.get("/:id", async (req, res, next) => {
 
 assetsRouter.post("/", async (req, res, next) => {
   try {
-    const payload = createOrReplaceAssetSchema.parse(req.body);
+    const parsed = assetPayloadSchema.parse(req.body);
+    const payload = toCreateAssetPayload(parsed);
     const asset = await inventoryService.createAsset(payload);
     res.status(201).json(asset);
   } catch (error) {
@@ -54,7 +92,8 @@ assetsRouter.post("/", async (req, res, next) => {
 
 assetsRouter.put("/:id", async (req, res, next) => {
   try {
-    const payload = createOrReplaceAssetSchema.parse(req.body);
+    const parsed = assetPayloadSchema.parse(req.body);
+    const payload = toCreateAssetPayload(parsed);
     const asset = await inventoryService.updateAsset(req.params.id, payload);
     res.json(asset);
   } catch (error) {
@@ -64,7 +103,8 @@ assetsRouter.put("/:id", async (req, res, next) => {
 
 assetsRouter.patch("/:id", async (req, res, next) => {
   try {
-    const payload = assetPayloadSchema.parse(req.body);
+    const parsed = assetPayloadSchema.parse(req.body);
+    const payload = toUpdateAssetPayload(parsed);
     const asset = await inventoryService.updateAsset(req.params.id, payload);
     res.json(asset);
   } catch (error) {
