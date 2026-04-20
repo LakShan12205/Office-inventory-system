@@ -48,3 +48,5 @@ app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, require
 app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, alertsRouter);
 
 app.use(errorHandler);
+
+export default app;
