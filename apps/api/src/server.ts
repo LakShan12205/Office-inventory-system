@@ -19,19 +19,27 @@ const helmet = require("helmet");
 
 export const app = express();
 
+/**
+ * 🔥 SECURITY + CORS FIX
+ */
 app.use(helmet());
 
 const allowedOrigins = [
   env.NEXT_PUBLIC_SITE_URL,
   "http://localhost:3000",
+
+  // production main domain
   "https://office-inventory-system-web-3bxn.vercel.app",
-  "https://office-inventory-system-web-3-git-ec9d14-kavindu12205s-projects.vercel.app",
-  "https://office-inventory-system-web-3bxn-lf31r2o2b.vercel.app"
+
+  // preview / deployment domains
+  "https://office-inventory-system-web-3bxn-lf31r2o2b.vercel.app",
+  "https://office-inventory-system-web-3-git-ec9d14-kavindu12205s-projects.vercel.app"
 ].filter(Boolean) as string[];
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      // allow requests with no origin (like Postman or server-side)
       if (!origin) {
         return callback(null, true);
       }
@@ -40,6 +48,7 @@ app.use(
         return callback(null, true);
       }
 
+      console.error("❌ CORS blocked:", origin);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true
@@ -49,19 +58,70 @@ app.use(
 app.use(express.json());
 app.use(morgan("dev"));
 
+/**
+ * ✅ HEALTH CHECK
+ */
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+/**
+ * ✅ ROUTES
+ */
 app.use("/api/auth", authRouter);
 app.use("/api/access-requests", accessRequestsRouter);
-app.use("/api/dashboard", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, dashboardRouter);
-app.use("/api/workstations", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, workstationsRouter);
-app.use("/api/assets", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, assetsRouter);
-app.use("/api/repairs", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, repairsRouter);
-app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, replacementsRouter);
-app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, alertsRouter);
 
+app.use(
+  "/api/dashboard",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  dashboardRouter
+);
+
+app.use(
+  "/api/workstations",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  workstationsRouter
+);
+
+app.use(
+  "/api/assets",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  assetsRouter
+);
+
+app.use(
+  "/api/repairs",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  repairsRouter
+);
+
+app.use(
+  "/api/replacements",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  replacementsRouter
+);
+
+app.use(
+  "/api/alerts",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  alertsRouter
+);
+
+/**
+ * ❌ ERROR HANDLER
+ */
 app.use(errorHandler);
 
 export default app;
