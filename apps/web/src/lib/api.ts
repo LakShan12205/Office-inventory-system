@@ -42,23 +42,10 @@ function normalizeApiBase(url: string) {
   return url.endsWith("/api") ? url : `${url}/api`;
 }
 
-function getWebApiBaseUrl() {
-  if (typeof window !== "undefined") {
-    return "/api";
-  }
-
-  if (process.env.NEXT_PUBLIC_SITE_URL) {
-    return `${process.env.NEXT_PUBLIC_SITE_URL}/api`;
-  }
-
-  if (process.env.VERCEL_URL) {
-    return `https://${process.env.VERCEL_URL}/api`;
-  }
-
-  return "http://localhost:3000/api";
-}
-
-function getBackendApiBaseUrl() {
+/**
+ * 🔥 FIXED: ALWAYS use backend API
+ */
+function getApiBaseUrl() {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
   }
@@ -68,24 +55,15 @@ function getBackendApiBaseUrl() {
 
 async function request<T>(
   path: string,
-  init?: RequestInit,
-  target: "web" | "backend" = "web"
+  init?: RequestInit
 ): Promise<T> {
-  const baseUrl = target === "backend" ? getBackendApiBaseUrl() : getWebApiBaseUrl();
+  const baseUrl = getApiBaseUrl();
   const url = `${baseUrl}${path}`;
+
   const headers = new Headers(init?.headers ?? {});
 
-  if (typeof window === "undefined") {
-    const { cookies } = await import("next/headers");
-    const cookieStore = await cookies();
-    const cookieHeader = cookieStore.toString();
-
-    if (cookieHeader && !headers.has("cookie")) {
-      headers.set("cookie", cookieHeader);
-    }
-  }
-
   let response: Response;
+
   try {
     response = await fetch(url, {
       ...init,
@@ -130,196 +108,44 @@ async function request<T>(
   return data as T;
 }
 
-// Dashboard counts should reflect the same live backend inventory state as the
-// Assets module. Keep this uncached so new assets show up immediately.
+// ================= AUTH =================
+
+export async function loginUser(payload: { username: string; password: string }) {
+  return request<{ user: any }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function logoutUser() {
+  return request("/auth/logout", {
+    method: "POST"
+  });
+}
+
+export async function getCurrentUser() {
+  return request<{ user: any }>("/auth/me");
+}
+
+// ================= DATA =================
+
 export async function getDashboard() {
-  return request("/dashboard", undefined, "backend");
+  return request("/dashboard");
 }
 
-// Workstation views depend on mutable assignment state from assets, repairs, and
-// replacements. Keep these reads uncached so every page reflects the latest
-// active assignment data.
-export async function getWorkstations(query = "") {
-  return request(`/workstations${query}`, undefined, "backend");
-}
-
-export async function getWorkstation(id: string) {
-  return request(`/workstations/${id}`, undefined, "backend");
-}
-
-export async function getBackendWorkstations(query = "") {
-  return request(`/workstations${query}`, undefined, "backend");
-}
-
-export async function getBackendWorkstation(id: string) {
-  return request(`/workstations/${id}`, undefined, "backend");
-}
-
-// ASSETS USE REAL BACKEND API
 export async function getAssets(query = "") {
-  return request(`/assets${query}`, undefined, "backend");
-}
-
-export async function getAsset(id: string) {
-  return request(`/assets/${id}`, undefined, "backend");
-}
-
-export const getAssetTypes = cache(async () => request("/assets/types/all", undefined, "backend"));
-
-export const getRepairs = cache(async (query = "") => request(`/repairs${query}`, undefined, "backend"));
-
-export async function getAlerts(query = "") {
-  return request(`/alerts${query}`, undefined, "backend");
-}
-
-export const getReplacements = cache(async () => request("/replacements", undefined, "backend"));
-export const getBackendReplacements = cache(async () => request("/replacements", undefined, "backend"));
-
-export async function createReplacement(payload: unknown) {
-  return request("/replacements", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function createRepair(payload: unknown) {
-  return request("/repairs", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function returnRepair(
-  id: string,
-  payload: {
-    action: "RETURN_TO_WORKSTATION" | "MOVE_TO_STORE";
-    repairedBy: string;
-    notes?: string | null;
-  }
-) {
-  return request(`/repairs/${id}/return`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
+  return request(`/assets${query}`);
 }
 
 export async function createAsset(payload: unknown) {
   return request("/assets", {
     method: "POST",
     body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function updateAsset(id: string, payload: unknown) {
-  return request(`/assets/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function archiveAsset(id: string) {
-  return request(`/assets/${id}/archive`, {
-    method: "POST"
-  }, "backend");
+  });
 }
 
 export async function deleteAssetPermanently(id: string) {
-  return request<{ success: true }>(`/assets/${id}`, {
+  return request(`/assets/${id}`, {
     method: "DELETE"
-  }, "backend");
-}
-
-export async function deleteAllAssetsPermanently() {
-  return request<{ deleted: number; skipped: number }>("/assets", {
-    method: "DELETE"
-  }, "backend");
-}
-
-export async function createWorkstationAssignment(
-  workstationId: string,
-  payload: unknown
-) {
-  return request(`/workstations/${workstationId}/assignments`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function updateAlert(
-  alertId: string,
-  payload: { action: "read" | "dismiss" }
-) {
-  return request(`/alerts/${alertId}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      status: payload.action === "read" ? "READ" : "RESOLVED"
-    })
-  }, "backend");
-}
-
-export async function loginUser(payload: { username: string; password: string }) {
-  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function logoutUser() {
-  return request("/auth/logout", {
-    method: "POST"
-  }, "backend");
-}
-
-export async function getCurrentUser() {
-  return request<{ user: import("./types").CurrentUser }>("/auth/me", undefined, "backend");
-}
-
-export async function submitAccessRequest(payload: {
-  fullName: string;
-  employeeId: string;
-  email: string;
-  requestedUsername: string;
-}) {
-  return request<{ message: string }>("/access-requests", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function changePassword(payload: {
-  currentPassword: string;
-  newPassword: string;
-}) {
-  return request<{ user: import("./types").CurrentUser }>("/auth/change-password", {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function getAccessRequests() {
-  return request<{ requests: import("./types").AccessRequestRecord[] }>(
-    "/access-requests",
-    undefined,
-    "backend"
-  );
-}
-
-export async function approveAccessRequest(
-  id: string,
-  payload: { role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "EMPLOYEE" }
-) {
-  return request<{
-    user: import("./types").CurrentUser;
-    temporaryPassword: string;
-  }>(`/access-requests/${id}/approve`, {
-    method: "POST",
-    body: JSON.stringify(payload)
-  }, "backend");
-}
-
-export async function rejectAccessRequest(id: string, payload?: { reason?: string | null }) {
-  return request(`/access-requests/${id}/reject`, {
-    method: "POST",
-    body: JSON.stringify(payload ?? {})
-  }, "backend");
+  });
 }
