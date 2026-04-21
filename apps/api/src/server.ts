@@ -19,32 +19,24 @@ const helmet = require("helmet");
 
 export const app = express();
 
-/**
- * 🔥 SECURITY + CORS FIX
- */
 app.use(helmet());
 
 const allowedOrigins = [
   env.NEXT_PUBLIC_SITE_URL,
-  "http://localhost:3000",
-
-  // production main domain
-  "https://office-inventory-system-web-3bxn.vercel.app",
-
-  // preview / deployment domains
-  "https://office-inventory-system-web-3bxn-lf31r2o2b.vercel.app",
-  "https://office-inventory-system-web-3-git-ec9d14-kavindu12205s-projects.vercel.app"
+  "http://localhost:3000"
 ].filter(Boolean) as string[];
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow requests with no origin (like Postman or server-side)
       if (!origin) {
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      const isAllowed =
+        allowedOrigins.includes(origin) || origin.endsWith(".vercel.app");
+
+      if (isAllowed) {
         return callback(null, true);
       }
 
@@ -58,16 +50,10 @@ app.use(
 app.use(express.json());
 app.use(morgan("dev"));
 
-/**
- * ✅ HEALTH CHECK
- */
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-/**
- * ✅ ROUTES
- */
 app.use("/api/auth", authRouter);
 app.use("/api/access-requests", accessRequestsRouter);
 
@@ -119,9 +105,6 @@ app.use(
   alertsRouter
 );
 
-/**
- * ❌ ERROR HANDLER
- */
 app.use(errorHandler);
 
 export default app;

@@ -6,13 +6,7 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function getAllowedOrigins() {
   return new Set(
-    [
-      env.NEXT_PUBLIC_SITE_URL,
-      "http://localhost:3000",
-      "https://office-inventory-system-web-3bxn.vercel.app",
-      "https://office-inventory-system-web-3bxn-lf31r2o2b.vercel.app",
-      "https://office-inventory-system-web-3-git-ec9d14-kavindu12205s-projects.vercel.app"
-    ]
+    [env.NEXT_PUBLIC_SITE_URL, "http://localhost:3000"]
       .filter(Boolean)
       .map((value) => new URL(value as string).origin)
   );
@@ -46,7 +40,11 @@ export function requireTrustedOrigin(req: Request, _res: Response, next: NextFun
     return null;
   })();
 
-  if (!candidateOrigin || !allowedOrigins.has(candidateOrigin)) {
+  const isAllowed =
+    !!candidateOrigin &&
+    (allowedOrigins.has(candidateOrigin) || candidateOrigin.endsWith(".vercel.app"));
+
+  if (!isAllowed) {
     next(createError(403, "Invalid request origin."));
     return;
   }
