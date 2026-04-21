@@ -42,9 +42,6 @@ function normalizeApiBase(url: string) {
   return url.endsWith("/api") ? url : `${url}/api`;
 }
 
-/**
- * 🔥 FIXED: ALWAYS use backend API
- */
 function getApiBaseUrl() {
   if (process.env.NEXT_PUBLIC_API_URL) {
     return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
@@ -53,17 +50,22 @@ function getApiBaseUrl() {
   return "http://localhost:4000/api";
 }
 
-async function request<T>(
-  path: string,
-  init?: RequestInit
-): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = getApiBaseUrl();
   const url = `${baseUrl}${path}`;
-
   const headers = new Headers(init?.headers ?? {});
 
-  let response: Response;
+  if (typeof window === "undefined") {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
 
+    if (cookieHeader && !headers.has("cookie")) {
+      headers.set("cookie", cookieHeader);
+    }
+  }
+
+  let response: Response;
   try {
     response = await fetch(url, {
       ...init,
@@ -108,10 +110,135 @@ async function request<T>(
   return data as T;
 }
 
-// ================= AUTH =================
+// Dashboard counts should reflect the same live backend inventory state as the
+// Assets module. Keep this uncached so new assets show up immediately.
+export async function getDashboard() {
+  return request("/dashboard");
+}
+
+// Workstation views depend on mutable assignment state from assets, repairs, and
+// replacements. Keep these reads uncached so every page reflects the latest
+// active assignment data.
+export async function getWorkstations(query = "") {
+  return request(`/workstations${query}`);
+}
+
+export async function getWorkstation(id: string) {
+  return request(`/workstations/${id}`);
+}
+
+export async function getBackendWorkstations(query = "") {
+  return request(`/workstations${query}`);
+}
+
+export async function getBackendWorkstation(id: string) {
+  return request(`/workstations/${id}`);
+}
+
+// ASSETS USE REAL BACKEND API
+export async function getAssets(query = "") {
+  return request(`/assets${query}`);
+}
+
+export async function getAsset(id: string) {
+  return request(`/assets/${id}`);
+}
+
+export const getAssetTypes = cache(async () => request("/assets/types/all"));
+
+export const getRepairs = cache(async (query = "") => request(`/repairs${query}`));
+
+export async function getAlerts(query = "") {
+  return request(`/alerts${query}`);
+}
+
+export const getReplacements = cache(async () => request("/replacements"));
+export const getBackendReplacements = cache(async () => request("/replacements"));
+
+export async function createReplacement(payload: unknown) {
+  return request("/replacements", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createRepair(payload: unknown) {
+  return request("/repairs", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function returnRepair(
+  id: string,
+  payload: {
+    action: "RETURN_TO_WORKSTATION" | "MOVE_TO_STORE";
+    repairedBy: string;
+    notes?: string | null;
+  }
+) {
+  return request(`/repairs/${id}/return`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function createAsset(payload: unknown) {
+  return request("/assets", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateAsset(id: string, payload: unknown) {
+  return request(`/assets/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function archiveAsset(id: string) {
+  return request(`/assets/${id}/archive`, {
+    method: "POST"
+  });
+}
+
+export async function deleteAssetPermanently(id: string) {
+  return request<{ success: true }>(`/assets/${id}`, {
+    method: "DELETE"
+  });
+}
+
+export async function deleteAllAssetsPermanently() {
+  return request<{ deleted: number; skipped: number }>("/assets", {
+    method: "DELETE"
+  });
+}
+
+export async function createWorkstationAssignment(
+  workstationId: string,
+  payload: unknown
+) {
+  return request(`/workstations/${workstationId}/assignments`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function updateAlert(
+  alertId: string,
+  payload: { action: "read" | "dismiss" }
+) {
+  return request(`/alerts/${alertId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      status: payload.action === "read" ? "READ" : "RESOLVED"
+    })
+  });
+}
 
 export async function loginUser(payload: { username: string; password: string }) {
-  return request<{ user: any }>("/auth/login", {
+  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
   });
@@ -124,28 +251,53 @@ export async function logoutUser() {
 }
 
 export async function getCurrentUser() {
-  return request<{ user: any }>("/auth/me");
+  return request<{ user: import("./types").CurrentUser }>("/auth/me");
 }
 
-// ================= DATA =================
-
-export async function getDashboard() {
-  return request("/dashboard");
-}
-
-export async function getAssets(query = "") {
-  return request(`/assets${query}`);
-}
-
-export async function createAsset(payload: unknown) {
-  return request("/assets", {
+export async function submitAccessRequest(payload: {
+  fullName: string;
+  employeeId: string;
+  email: string;
+  requestedUsername: string;
+}) {
+  return request<{ message: string }>("/access-requests", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
-export async function deleteAssetPermanently(id: string) {
-  return request(`/assets/${id}`, {
-    method: "DELETE"
+export async function changePassword(payload: {
+  currentPassword: string;
+  newPassword: string;
+}) {
+  return request<{ user: import("./types").CurrentUser }>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function getAccessRequests() {
+  return request<{ requests: import("./types").AccessRequestRecord[] }>(
+    "/access-requests"
+  );
+}
+
+export async function approveAccessRequest(
+  id: string,
+  payload: { role: "ADMIN" | "SUPERVISOR" | "MANAGER" | "EMPLOYEE" }
+) {
+  return request<{
+    user: import("./types").CurrentUser;
+    temporaryPassword: string;
+  }>(`/access-requests/${id}/approve`, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export async function rejectAccessRequest(id: string, payload?: { reason?: string | null }) {
+  return request(`/access-requests/${id}/reject`, {
+    method: "POST",
+    body: JSON.stringify(payload ?? {})
   });
 }
