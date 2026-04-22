@@ -47,7 +47,7 @@ function getApiBaseUrl() {
     return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
   }
 
-  return "http://localhost:4000/api";
+  return "/api";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -110,15 +110,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return data as T;
 }
 
-// Dashboard counts should reflect the same live backend inventory state as the
-// Assets module. Keep this uncached so new assets show up immediately.
 export async function getDashboard() {
   return request("/dashboard");
 }
 
-// Workstation views depend on mutable assignment state from assets, repairs, and
-// replacements. Keep these reads uncached so every page reflects the latest
-// active assignment data.
 export async function getWorkstations(query = "") {
   return request(`/workstations${query}`);
 }
@@ -135,7 +130,6 @@ export async function getBackendWorkstation(id: string) {
   return request(`/workstations/${id}`);
 }
 
-// ASSETS USE REAL BACKEND API
 export async function getAssets(query = "") {
   return request(`/assets${query}`);
 }
