@@ -19,11 +19,16 @@ const helmet = require("helmet");
 
 export const app = express();
 
-app.use(helmet());
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false
+  })
+);
 
 const allowedOrigins = [
   env.NEXT_PUBLIC_SITE_URL,
-  "http://localhost:3000"
+  "http://localhost:3000",
+  "https://office-inventory-system-web-dntb.vercel.app"
 ].filter(Boolean) as string[];
 
 app.use(
@@ -43,7 +48,9 @@ app.use(
       console.error("❌ CORS blocked:", origin);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   })
 );
 
