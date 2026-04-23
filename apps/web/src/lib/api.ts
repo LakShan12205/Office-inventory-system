@@ -39,7 +39,8 @@ export function getApiErrorMessages(error: unknown) {
 }
 
 function normalizeBase(url: string) {
-  return url.endsWith("/api") ? url : `${url}/api`;
+  const normalized = url.startsWith("http") ? url : `https://${url}`;
+  return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
 }
 
 function getApiBaseUrl() {
@@ -47,10 +48,11 @@ function getApiBaseUrl() {
     return "/api";
   }
 
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
-  if (!siteUrl) {
-    throw new Error("NEXT_PUBLIC_SITE_URL is not configured");
-  }
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL ||
+    "http://localhost:3000";
 
   return normalizeBase(siteUrl);
 }
