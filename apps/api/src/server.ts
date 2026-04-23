@@ -28,7 +28,7 @@ app.use(
 );
 
 const allowedOrigins = [
-  env.NEXT_PUBLIC_SITE_URL,
+  env.SITE_URL,
   "http://localhost:3000",
   "https://office-inventory-system-web-dntb.vercel.app"
 ].filter(Boolean) as string[];
@@ -61,6 +61,10 @@ app.use(morgan("dev"));
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/", (_req, res) => {
+  res.json({ status: "ok", service: "office-inventory-api" });
 });
 
 app.use("/api/auth", authRouter);

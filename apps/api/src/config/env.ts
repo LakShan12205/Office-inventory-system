@@ -1,28 +1,35 @@
-import dotenv from "dotenv";
+import "dotenv/config";
 import { z } from "zod";
 
-dotenv.config();
-dotenv.config({ path: "../../.env", override: true });
-
-const rawEnv = {
-  ...process.env,
-  AUTH_SECRET: process.env.AUTH_SECRET ?? process.env.JWT_SECRET
-};
-
 const envSchema = z.object({
-  DATABASE_URL: z.string().min(1).optional(),
-  AUTH_SECRET: z.string().min(32),
-  AUTH_COOKIE_DOMAIN: z.string().min(1).optional(),
-  NEXT_PUBLIC_API_URL: z.string().url().optional(),
-  NEXT_PUBLIC_SITE_URL: z.string().url().optional(),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(4000),
-  USE_MOCK_DATA: z.coerce.boolean().default(false)
+
+  DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
+  JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
+  AUTH_SECRET: z.string().min(1, "AUTH_SECRET is required"),
+
+  USE_MOCK_DATA: z
+    .string()
+    .optional()
+    .transform((value) => value === "true"),
+
+  SITE_URL: z.string().url("SITE_URL must be a valid URL").optional()
 });
 
-const parsedEnv = envSchema.parse(rawEnv);
+const parsed = envSchema.safeParse(process.env);
 
-if (!parsedEnv.USE_MOCK_DATA && !parsedEnv.DATABASE_URL) {
-  throw new Error("DATABASE_URL is required when USE_MOCK_DATA=false");
+if (!parsed.success) {
+  console.error("Invalid environment variables:");
+  console.error(parsed.error.flatten().fieldErrors);
+  throw new Error("Invalid environment variables");
 }
 
-export const env = parsedEnv;
+export const env = {
+  ...parsed.data,
+  SITE_URL:
+    parsed.data.SITE_URL ??
+    (parsed.data.NODE_ENV === "production"
+      ? undefined
+      : "http://localhost:3000")
+};
