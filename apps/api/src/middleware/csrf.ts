@@ -1,53 +1,33 @@
-import createError from "http-errors";
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response, NextFunction } from "express";
 import { env } from "../config/env.js";
 
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const trustedOrigins = [
+  env.SITE_URL,
+  "http://localhost:3000",
+  "https://office-inventory-system-web-dntb.vercel.app"
+].filter(Boolean) as string[];
 
-function getAllowedOrigins() {
-  return new Set(
-    [env.NEXT_PUBLIC_SITE_URL, "http://localhost:3000"]
-      .filter(Boolean)
-      .map((value) => new URL(value as string).origin)
+export function requireTrustedOrigin(req: Request, res: Response, next: NextFunction) {
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+
+  if (!origin && !referer) {
+    return next();
+  }
+
+  const source = origin ?? referer ?? "";
+  const isTrusted = trustedOrigins.some((trustedOrigin) =>
+    source.startsWith(trustedOrigin)
   );
-}
 
-// Lightweight CSRF protection for cookie-authenticated write routes.
-// We validate Origin / Referer against the known frontend origin.
-export function requireTrustedOrigin(req: Request, _res: Response, next: NextFunction) {
-  if (SAFE_METHODS.has(req.method.toUpperCase())) {
-    next();
-    return;
-  }
-
-  const allowedOrigins = getAllowedOrigins();
-  const originHeader = req.headers.origin;
-  const refererHeader = req.headers.referer;
-
-  const candidateOrigin = (() => {
-    if (typeof originHeader === "string" && originHeader.trim()) {
-      return originHeader;
-    }
-
-    if (typeof refererHeader === "string" && refererHeader.trim()) {
-      try {
-        return new URL(refererHeader).origin;
-      } catch {
-        return null;
+  if (!isTrusted) {
+    return res.status(403).json({
+      error: {
+        message: "Untrusted request origin.",
+        status: 403
       }
-    }
-
-    return null;
-  })();
-
-  const isAllowed =
-    !!candidateOrigin &&
-    (allowedOrigins.has(candidateOrigin) || candidateOrigin.endsWith(".vercel.app"));
-
-  if (!isAllowed) {
-    next(createError(403, "Invalid request origin."));
-    return;
+    });
   }
 
-  next();
+  return next();
 }
