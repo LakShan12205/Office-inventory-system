@@ -38,16 +38,21 @@ export function getApiErrorMessages(error: unknown) {
   return ["Something went wrong. Please try again."];
 }
 
-function normalizeApiBase(url: string) {
+function normalizeBase(url: string) {
   return url.endsWith("/api") ? url : `${url}/api`;
 }
 
 function getApiBaseUrl() {
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return normalizeApiBase(process.env.NEXT_PUBLIC_API_URL);
+  if (typeof window !== "undefined") {
+    return "/api";
   }
 
-  return "/api";
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!siteUrl) {
+    throw new Error("NEXT_PUBLIC_SITE_URL is not configured");
+  }
+
+  return normalizeBase(siteUrl);
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -94,13 +99,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    console.error("API request failed", {
-      url,
-      status: response.status,
-      statusText: response.statusText,
-      body: data
-    });
-
     throw new ApiError(
       getReadableApiErrorMessage(response.status, data),
       Array.isArray(data?.error?.issues) ? data.error.issues : undefined

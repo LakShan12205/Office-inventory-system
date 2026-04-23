@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { DashboardFooter } from "@/components/dashboard-footer";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatCard } from "@/components/ui/stat-card";
-import { getDashboard } from "@/lib/api";
+import { ApiError, getDashboard } from "@/lib/api";
 import { DashboardData } from "@/lib/types";
 
 function HeroIllustration() {
@@ -109,7 +110,17 @@ function AlertIcon() {
 }
 
 export default async function DashboardPage() {
-  const data = (await getDashboard()) as DashboardData;
+  let data: DashboardData;
+
+  try {
+    data = (await getDashboard()) as DashboardData;
+  } catch (error) {
+    if (error instanceof ApiError && error.message.toLowerCase().includes("authentication required")) {
+      redirect("/login");
+    }
+
+    throw error;
+  }
 
   return (
     <div className="space-y-7">
