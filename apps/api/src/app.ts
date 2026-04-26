@@ -6,7 +6,6 @@ import morgan from "morgan";
 import { env } from "./config/env.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requireAuth, requirePasswordChangeResolved } from "./middleware/auth.js";
-import { requireTrustedOrigin } from "./middleware/csrf.js";
 
 import { alertsRouter } from "./modules/alerts/alerts.routes.js";
 import { assetsRouter } from "./modules/assets/assets.routes.js";
@@ -29,10 +28,7 @@ app.use(
   })
 );
 
-const allowedOrigins = [
-  env.SITE_URL,
-  "http://localhost:3000"
-].filter(Boolean) as string[];
+const allowedOrigins = [env.SITE_URL, "http://localhost:3000"].filter(Boolean) as string[];
 
 app.use(
   cors({
@@ -86,15 +82,4 @@ app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, alertsRouter)
 
 app.use(errorHandler);
 
-
-// ... your existing code ends with app.use(errorHandler);
-
-// 👇 COPY-PASTE this at the VERY END
-export default async (req, res) => {
-  return new Promise((resolve, reject) => {
-    app(req, res, (err) => {
-      if (err) reject(err);
-      else resolve();
-    });
-  });
-};
+export default app;
