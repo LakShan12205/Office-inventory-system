@@ -85,3 +85,16 @@ app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, replace
 app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, alertsRouter);
 
 app.use(errorHandler);
+
+
+// ... your existing code ends with app.use(errorHandler);
+
+// 👇 COPY-PASTE this at the VERY END
+export default async (req, res) => {
+  return new Promise((resolve, reject) => {
+    app(req, res, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+};
