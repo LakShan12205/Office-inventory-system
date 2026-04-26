@@ -47,6 +47,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
 
+  if (typeof window === "undefined") {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    const cookieHeader = cookieStore.toString();
+
+    if (cookieHeader && !headers.has("cookie")) {
+      headers.set("cookie", cookieHeader);
+    }
+  }
+
   let response: Response;
 
   try {
@@ -123,7 +133,6 @@ export async function getAlerts(query = "") {
 }
 
 export const getReplacements = cache(async () => request("/replacements"));
-
 export const getBackendReplacements = cache(async () => request("/replacements"));
 
 export async function createReplacement(payload: unknown) {
@@ -186,20 +195,14 @@ export async function deleteAllAssetsPermanently() {
   });
 }
 
-export async function createWorkstationAssignment(
-  workstationId: string,
-  payload: unknown
-) {
+export async function createWorkstationAssignment(workstationId: string, payload: unknown) {
   return request(`/workstations/${workstationId}/assignments`, {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
-export async function updateAlert(
-  alertId: string,
-  payload: { action: "read" | "dismiss" }
-) {
+export async function updateAlert(alertId: string, payload: { action: "read" | "dismiss" }) {
   return request(`/alerts/${alertId}`, {
     method: "PUT",
     body: JSON.stringify({
@@ -248,9 +251,7 @@ export async function changePassword(payload: {
 }
 
 export async function getAccessRequests() {
-  return request<{ requests: import("./types").AccessRequestRecord[] }>(
-    "/access-requests"
-  );
+  return request<{ requests: import("./types").AccessRequestRecord[] }>("/access-requests");
 }
 
 export async function approveAccessRequest(
