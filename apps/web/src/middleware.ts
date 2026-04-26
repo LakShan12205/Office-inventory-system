@@ -1,33 +1,39 @@
-import type { Request, Response, NextFunction } from "express";
-import { env } from "../config/env.js";
+import { NextResponse, type NextRequest } from "next/server";
 
-const trustedOrigins = [
-  env.SITE_URL,
-  "http://localhost:3000",
-  "https://office-inventory-system-web-dntb.vercel.app"
-].filter(Boolean) as string[];
+const PUBLIC_ROUTES = ["/login", "/request-access"];
 
-export function requireTrustedOrigin(req: Request, res: Response, next: NextFunction) {
-  const origin = req.headers.origin;
-  const referer = req.headers.referer;
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-  if (!origin && !referer) {
-    return next();
+  if (
+    pathname.startsWith("/_next") ||
+    pathname.startsWith("/api") ||
+    pathname === "/favicon.ico" ||
+    pathname === "/favicon.png" ||
+    pathname === "/logo.png" ||
+    pathname === "/background.png"
+  ) {
+    return NextResponse.next();
   }
 
-  const source = origin ?? referer ?? "";
-  const isTrusted = trustedOrigins.some((trustedOrigin) =>
-    source.startsWith(trustedOrigin)
-  );
+  const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
+  const token = request.cookies.get("token")?.value;
 
-  if (!isTrusted) {
-    return res.status(403).json({
-      error: {
-        message: "Untrusted request origin.",
-        status: 403
-      }
-    });
+  if (!token && !isPublicRoute) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    return NextResponse.redirect(loginUrl);
   }
 
-  return next();
+  if (token && isPublicRoute) {
+    const dashboardUrl = request.nextUrl.clone();
+    dashboardUrl.pathname = "/dashboard";
+    return NextResponse.redirect(dashboardUrl);
+  }
+
+  return NextResponse.next();
 }
+
+export const config = {
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"]
+};
