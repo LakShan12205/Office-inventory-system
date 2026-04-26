@@ -38,23 +38,8 @@ export function getApiErrorMessages(error: unknown) {
   return ["Something went wrong. Please try again."];
 }
 
-function normalizeBase(url: string) {
-  const normalized = url.startsWith("http") ? url : `https://${url}`;
-  return normalized.endsWith("/api") ? normalized : `${normalized}/api`;
-}
-
 function getApiBaseUrl() {
-  if (typeof window !== "undefined") {
-    return "/api";
-  }
-
-  const siteUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL ||
-    "http://localhost:3000";
-
-  return normalizeBase(siteUrl);
+  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -62,17 +47,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
 
-  if (typeof window === "undefined") {
-    const { cookies } = await import("next/headers");
-    const cookieStore = await cookies();
-    const cookieHeader = cookieStore.toString();
-
-    if (cookieHeader && !headers.has("cookie")) {
-      headers.set("cookie", cookieHeader);
-    }
-  }
-
   let response: Response;
+
   try {
     response = await fetch(url, {
       ...init,
@@ -147,6 +123,7 @@ export async function getAlerts(query = "") {
 }
 
 export const getReplacements = cache(async () => request("/replacements"));
+
 export const getBackendReplacements = cache(async () => request("/replacements"));
 
 export async function createReplacement(payload: unknown) {
