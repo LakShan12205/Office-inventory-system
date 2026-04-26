@@ -16,18 +16,22 @@ export default async function DashboardPage() {
       returnedReplacements: 0,
       overdueRepairs: 0,
       followUpAlerts: 0
-    }
+    },
+    latestAlerts: [],       // ✅ REQUIRED
+    recentRepairs: []       // ✅ REQUIRED
   };
 
   try {
     data = (await getDashboard()) as DashboardData;
   } catch (error) {
+    // 🔐 Not logged → go login
     if (error instanceof ApiError) {
       if (error.message.toLowerCase().includes("authentication")) {
         redirect("/login");
       }
     }
 
+    // ❗ Prevent crash
     console.log("Dashboard fetch failed, using fallback data");
   }
 
