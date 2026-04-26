@@ -17,7 +17,7 @@ export function middleware(request: NextRequest) {
   }
 
   const isPublicRoute = PUBLIC_ROUTES.some((route) => pathname.startsWith(route));
-  const token = request.cookies.get("token")?.value;
+  const token = request.cookies.get("office_inventory_auth")?.value;
 
   if (!token && !isPublicRoute) {
     const loginUrl = request.nextUrl.clone();
