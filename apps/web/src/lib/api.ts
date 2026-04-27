@@ -47,6 +47,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
 
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("token");
+
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+
   if (typeof window === "undefined") {
     const { cookies } = await import("next/headers");
     const cookieStore = await cookies();
@@ -62,10 +74,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(url, {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        ...Object.fromEntries(headers.entries())
-      },
+      headers,
       cache: "no-store",
       credentials: "include"
     });
@@ -212,13 +221,21 @@ export async function updateAlert(alertId: string, payload: { action: "read" | "
 }
 
 export async function loginUser(payload: { username: string; password: string }) {
-  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
+  return request<{
+    user: import("./types").CurrentUser;
+    token?: string;
+  }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export async function logoutUser() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+  }
+
   return request("/auth/logout", {
     method: "POST"
   });

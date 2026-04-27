@@ -1,6 +1,5 @@
-import { listAssetTypes } from "../../../_lib/mock-data";
-import { handleRoute } from "../../../_lib/route-utils";
+import { proxyToBackend } from "../../../_lib/backend-proxy";
 
-export async function GET() {
-  return handleRoute(async () => listAssetTypes());
+export async function GET(request: Request) {
+  return proxyToBackend(request, "/assets/types/all");
 }

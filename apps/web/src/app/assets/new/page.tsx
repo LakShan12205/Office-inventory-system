@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import { AssetForm } from "@/components/forms/asset-form";
 import { PageHeader } from "@/components/ui/page-header";
 import { getAssetTypes } from "@/lib/api";

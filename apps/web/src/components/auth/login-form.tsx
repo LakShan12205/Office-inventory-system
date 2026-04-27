@@ -25,10 +25,16 @@ export function LoginForm() {
     try {
       setLoading(true);
 
-      await loginUser({
+      const data = await loginUser({
         username: username.trim(),
         password
       });
+
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+      }
+
+      localStorage.setItem("user", JSON.stringify(data.user));
 
       const { user } = await getCurrentUser();
 
@@ -66,6 +72,7 @@ export function LoginForm() {
             >
               Username
             </label>
+
             <input
               id="username"
               name="username"
@@ -91,6 +98,7 @@ export function LoginForm() {
             >
               Password
             </label>
+
             <input
               id="password"
               name="password"
@@ -117,10 +125,8 @@ export function LoginForm() {
               onChange={(e) => setShowPassword(e.target.checked)}
               className="h-5 w-5 rounded border-[#b8c5da] text-[#4d7f6b] focus:ring-[#4d7f6b]"
             />
-            <label
-              htmlFor="show-password"
-              className="text-lg text-[#4f5e7c]"
-            >
+
+            <label htmlFor="show-password" className="text-lg text-[#4f5e7c]">
               Show password
             </label>
           </div>

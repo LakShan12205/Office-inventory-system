@@ -1,12 +1,33 @@
-import { getAssetById } from "../../_lib/mock-data";
-import { handleRoute } from "../../_lib/route-utils";
+import { proxyToBackend } from "../../_lib/backend-proxy";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  return handleRoute(async () => {
-    const { id } = await context.params;
-    return getAssetById(id);
-  });
+  const { id } = await context.params;
+  return proxyToBackend(request, `/assets/${id}`);
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  return proxyToBackend(request, `/assets/${id}`);
+}
+
+export async function PUT(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  return proxyToBackend(request, `/assets/${id}`);
+}
+
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> }
+) {
+  const { id } = await context.params;
+  return proxyToBackend(request, `/assets/${id}`);
 }
