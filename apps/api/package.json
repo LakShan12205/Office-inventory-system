@@ -8,13 +8,13 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.json",
+    "build": "npx prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
-    "postinstall": "prisma generate --schema prisma/schema.prisma",
-    "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:push": "prisma db push --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "postinstall": "npx prisma generate --schema prisma/schema.prisma",
+    "db:generate": "npx prisma generate --schema prisma/schema.prisma",
+    "db:push": "npx prisma db push --schema prisma/schema.prisma",
+    "db:migrate": "npx prisma migrate dev --schema prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "db:bootstrap-admin": "tsx prisma/bootstrap-admin.ts"
   },
