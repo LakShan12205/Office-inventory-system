@@ -1,6 +1,6 @@
 import cors from "cors";
 import express from "express";
-import helmet from "helmet";
+import helmetModule from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env.js";
 import { requireAuth, requirePasswordChangeResolved } from "./middleware/auth.js";
@@ -13,6 +13,8 @@ import { dashboardRouter } from "./modules/dashboard/dashboard.routes.js";
 import { repairsRouter } from "./modules/repairs/repairs.routes.js";
 import { replacementsRouter } from "./modules/replacements/replacements.routes.js";
 import { workstationsRouter } from "./modules/workstations/workstations.routes.js";
+
+const helmet = (helmetModule as any).default ?? helmetModule;
 
 export const app = express();
 
@@ -39,8 +41,7 @@ app.use(
         return;
       }
 
-      const isAllowed =
-        allowedOrigins.includes(origin) || origin.endsWith(".vercel.app");
+      const isAllowed = allowedOrigins.includes(origin) || origin.endsWith(".vercel.app");
 
       if (isAllowed) {
         callback(null, true);
@@ -87,48 +88,13 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/access-requests", accessRequestsRouter);
-app.use(
-  "/api/dashboard",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  dashboardRouter
-);
-app.use(
-  "/api/workstations",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  workstationsRouter
-);
-app.use(
-  "/api/assets",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  assetsRouter
-);
-app.use(
-  "/api/repairs",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  repairsRouter
-);
-app.use(
-  "/api/replacements",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  replacementsRouter
-);
-app.use(
-  "/api/alerts",
-  requireAuth,
-  requirePasswordChangeResolved,
-  requireTrustedOrigin,
-  alertsRouter
-);
+
+app.use("/api/dashboard", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, dashboardRouter);
+app.use("/api/workstations", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, workstationsRouter);
+app.use("/api/assets", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, assetsRouter);
+app.use("/api/repairs", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, repairsRouter);
+app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, replacementsRouter);
+app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, requireTrustedOrigin, alertsRouter);
 
 app.use(errorHandler);
 
