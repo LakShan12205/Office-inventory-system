@@ -1,12 +1,11 @@
 import cors from "cors";
 import express from "express";
-import { createRequire } from "module";
+import helmet from "helmet";
 import morgan from "morgan";
-
 import { env } from "./config/env.js";
-import { errorHandler } from "./middleware/error-handler.js";
 import { requireAuth, requirePasswordChangeResolved } from "./middleware/auth.js";
-
+import { requireTrustedOrigin } from "./middleware/csrf.js";
+import { errorHandler } from "./middleware/error-handler.js";
 import { alertsRouter } from "./modules/alerts/alerts.routes.js";
 import { assetsRouter } from "./modules/assets/assets.routes.js";
 import { accessRequestsRouter, authRouter } from "./modules/auth/auth.routes.js";
@@ -15,10 +14,14 @@ import { repairsRouter } from "./modules/repairs/repairs.routes.js";
 import { replacementsRouter } from "./modules/replacements/replacements.routes.js";
 import { workstationsRouter } from "./modules/workstations/workstations.routes.js";
 
-const require = createRequire(import.meta.url);
-const helmet = require("helmet");
-
 export const app = express();
+
+const allowedOrigins = [
+  env.NEXT_PUBLIC_SITE_URL,
+  env.SITE_URL,
+  env.VERCEL_URL ? `https://${env.VERCEL_URL}` : null,
+  "http://localhost:3000"
+].filter(Boolean) as string[];
 
 app.set("trust proxy", 1);
 
@@ -28,8 +31,6 @@ app.use(
   })
 );
 
-const allowedOrigins = [env.SITE_URL, "http://localhost:3000"].filter(Boolean) as string[];
-
 app.use(
   cors({
     origin(origin, callback) {
@@ -38,14 +39,19 @@ app.use(
         return;
       }
 
-      if (allowedOrigins.includes(origin)) {
+      const isAllowed =
+        allowedOrigins.includes(origin) || origin.endsWith(".vercel.app");
+
+      if (isAllowed) {
         callback(null, true);
         return;
       }
 
       callback(new Error(`CORS blocked for origin: ${origin}`));
     },
-    credentials: true
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"]
   })
 );
 
@@ -61,6 +67,15 @@ app.get("/", (_req, res) => {
   });
 });
 
+app.get("/health", (_req, res) => {
+  res.status(200).json({
+    ok: true,
+    service: "office-inventory-api",
+    environment: env.NODE_ENV,
+    useMockData: env.USE_MOCK_DATA
+  });
+});
+
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
     ok: true,
@@ -72,13 +87,48 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/access-requests", accessRequestsRouter);
-
-app.use("/api/dashboard", requireAuth, requirePasswordChangeResolved, dashboardRouter);
-app.use("/api/workstations", requireAuth, requirePasswordChangeResolved, workstationsRouter);
-app.use("/api/assets", requireAuth, requirePasswordChangeResolved, assetsRouter);
-app.use("/api/repairs", requireAuth, requirePasswordChangeResolved, repairsRouter);
-app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, replacementsRouter);
-app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, alertsRouter);
+app.use(
+  "/api/dashboard",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  dashboardRouter
+);
+app.use(
+  "/api/workstations",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  workstationsRouter
+);
+app.use(
+  "/api/assets",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  assetsRouter
+);
+app.use(
+  "/api/repairs",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  repairsRouter
+);
+app.use(
+  "/api/replacements",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  replacementsRouter
+);
+app.use(
+  "/api/alerts",
+  requireAuth,
+  requirePasswordChangeResolved,
+  requireTrustedOrigin,
+  alertsRouter
+);
 
 app.use(errorHandler);
 

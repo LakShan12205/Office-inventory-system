@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import createError from "http-errors";
 import { prisma } from "../../db/prisma.js";
 
@@ -773,7 +774,13 @@ export async function archiveAsset(id: string) {
   }
 
   const activeAssignment = asset.workstationAssignments.find(
-    (assignment) => assignment.status === "ACTIVE" || assignment.isActive
+    (assignment: {
+      status?: string | null;
+      isActive?: boolean | null;
+      workstation?: { code?: string | null } | null;
+      specificLocationNotes?: string | null;
+      generalLocation?: string | null;
+    }) => assignment.status === "ACTIVE" || assignment.isActive
   );
 
   if (activeAssignment) {
@@ -875,8 +882,8 @@ export async function deleteAllRemovableAssets() {
   });
 
   const removableAssetIds = assets
-    .filter((asset) => !assetHasDeletionDependencies(asset))
-    .map((asset) => asset.id);
+    .filter((asset: (typeof assets)[number]) => !assetHasDeletionDependencies(asset))
+    .map((asset: (typeof assets)[number]) => asset.id);
 
   const deleteResult =
     removableAssetIds.length > 0
@@ -1061,7 +1068,11 @@ export async function createRepair(input: {
       throw createError(409, "Replacement asset must be available in store.");
     }
 
-    if (replacementAsset.workstationAssignments.some((assignment) => assignment.status === "ACTIVE")) {
+    if (
+      replacementAsset.workstationAssignments.some(
+        (assignment: { status?: string | null }) => assignment.status === "ACTIVE"
+      )
+    ) {
       throw createError(409, "Replacement asset is already assigned.");
     }
 
@@ -1263,7 +1274,7 @@ export async function returnRepair(
 ) {
   const returnedAt = new Date();
 
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     const repair = await tx.repair.findUnique({
       where: { id },
       include: {
@@ -1462,7 +1473,11 @@ export async function createReplacement(input: {
     throw createError(409, "Replacement asset must be available in store.");
   }
 
-  if (replacementAsset.workstationAssignments.some((assignment) => assignment.status === "ACTIVE")) {
+  if (
+    replacementAsset.workstationAssignments.some(
+      (assignment: { status?: string | null }) => assignment.status === "ACTIVE"
+    )
+  ) {
     throw createError(409, "Replacement asset is already assigned.");
   }
 
@@ -1478,7 +1493,9 @@ export async function createReplacement(input: {
   }
 
   const originalActiveAssignment =
-    originalAsset.workstationAssignments.find((assignment) => assignment.status === "ACTIVE") ?? null;
+    originalAsset.workstationAssignments.find(
+      (assignment: { status?: string | null }) => assignment.status === "ACTIVE"
+    ) ?? null;
   const workstationId = input.workstationId ?? originalActiveAssignment?.workstationId ?? null;
 
   if (!workstationId) {
@@ -1930,7 +1947,8 @@ export async function updateAsset(id: string, input: {
 
   const activeAssignment =
     existingAsset.workstationAssignments.find(
-      (assignment) => assignment.status === "ACTIVE" || assignment.isActive
+      (assignment: { status?: string | null; isActive?: boolean | null }) =>
+        assignment.status === "ACTIVE" || assignment.isActive
     ) ?? null;
   const preservedAssignment =
     input.assignment === undefined && supportsLiveAssignment(input.status)

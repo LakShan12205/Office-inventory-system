@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
+import { proxyToBackend } from "../_lib/backend-proxy";
 
-export async function GET() {
-  return NextResponse.json({ status: "ok" });
+export async function GET(request: Request) {
+  return proxyToBackend(request, "/health");
 }

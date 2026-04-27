@@ -180,7 +180,7 @@ export async function listAccessRequests() {
     orderBy: [{ status: "asc" }, { submittedAt: "desc" }]
   });
 
-  return requests.map((request) => ({
+  return requests.map((request: (typeof requests)[number]) => ({
     id: request.id,
     fullName: request.fullName,
     employeeId: request.employeeId,

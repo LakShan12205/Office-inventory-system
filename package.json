@@ -2,6 +2,9 @@
   "name": "office-workstation-inventory-system",
   "private": true,
   "version": "0.1.0",
+  "engines": {
+    "node": "22.x"
+  },
   "workspaces": [
     "apps/api",
     "apps/web"
@@ -10,11 +13,9 @@
     "dev": "node scripts/dev.mjs",
     "build": "npm run build -w apps/api && npm run build -w apps/web",
     "lint": "npm run lint -w apps/api && npm run lint -w apps/web",
+    "postinstall": "npm run db:generate -w apps/api",
     "db:generate": "npm run db:generate -w apps/api",
     "db:migrate": "npm run db:migrate -w apps/api",
     "db:seed": "npm run db:seed -w apps/api"
-  },
-  "dependencies": {
-    "bcrypt": "^6.0.0"
   }
 }

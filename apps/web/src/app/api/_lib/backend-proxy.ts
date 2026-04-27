@@ -5,7 +5,14 @@ function normalizeApiBase(url: string) {
 }
 
 function buildBackendUrl(path: string) {
-  const backendBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+  const backendBase =
+    process.env.NEXT_PUBLIC_API_URL ??
+    (process.env.NODE_ENV === "production" ? undefined : "http://localhost:4000");
+
+  if (!backendBase) {
+    throw new Error("NEXT_PUBLIC_API_URL is not configured.");
+  }
+
   const normalizedBase = normalizeApiBase(backendBase.replace(/\/$/, ""));
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return new URL(`${normalizedBase}${normalizedPath}`);
@@ -16,7 +23,21 @@ export async function proxyToBackend(
   path: string,
   init?: { method?: string; body?: string }
 ) {
-  const backendUrl = buildBackendUrl(path);
+  let backendUrl: URL;
+
+  try {
+    backendUrl = buildBackendUrl(path);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: {
+          message: error instanceof Error ? error.message : "Backend URL is not configured.",
+          status: 500
+        }
+      },
+      { status: 500 }
+    );
+  }
   const incomingUrl = new URL(request.url);
 
   incomingUrl.searchParams.forEach((value, key) => {

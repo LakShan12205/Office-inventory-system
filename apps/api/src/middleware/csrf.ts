@@ -2,9 +2,9 @@ import type { Request, Response, NextFunction } from "express";
 import { env } from "../config/env.js";
 
 const trustedOrigins = [
+  env.NEXT_PUBLIC_SITE_URL,
   env.SITE_URL,
-  "http://localhost:3000",
-  "https://office-inventory-system-web-dntb.vercel.app"
+  "http://localhost:3000"
 ].filter(Boolean) as string[];
 
 export function requireTrustedOrigin(req: Request, res: Response, next: NextFunction) {
@@ -16,9 +16,9 @@ export function requireTrustedOrigin(req: Request, res: Response, next: NextFunc
   }
 
   const source = origin ?? referer ?? "";
-  const isTrusted = trustedOrigins.some((trustedOrigin) =>
-    source.startsWith(trustedOrigin)
-  );
+  const isTrusted =
+    trustedOrigins.some((trustedOrigin) => source.startsWith(trustedOrigin)) ||
+    source.includes(".vercel.app");
 
   if (!isTrusted) {
     return res.status(403).json({

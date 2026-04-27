@@ -51,7 +51,8 @@ export function getAuthCookieOptions() {
     secure: isProduction,
     sameSite: "lax" as const,
     path: "/",
-    maxAge: 1000 * 60 * 60 * 12
+    maxAge: 1000 * 60 * 60 * 12,
+    domain: env.AUTH_COOKIE_DOMAIN
   };
 }
 

@@ -4,7 +4,7 @@ const nextConfig = {
     externalDir: true
   },
   env: {
-    NEXT_PUBLIC_USE_MOCK_DATA: process.env.USE_MOCK_DATA ?? "true"
+    NEXT_PUBLIC_USE_MOCK_DATA: process.env.USE_MOCK_DATA ?? "false"
   }
 };
 

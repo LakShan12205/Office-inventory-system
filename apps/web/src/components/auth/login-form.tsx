@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { getCurrentUser, loginUser } from "@/lib/api";
+import { loginUser } from "@/lib/api";
 
 export function LoginForm() {
   const router = useRouter();
@@ -30,24 +30,16 @@ export function LoginForm() {
         password
       });
 
-      if (data.token) {
-        localStorage.setItem("token", data.token);
-      }
-
-      localStorage.setItem("user", JSON.stringify(data.user));
-
-      const { user } = await getCurrentUser();
-
-      if (user.mustChangePassword) {
-        router.push("/change-password");
-      } else {
-        router.push("/dashboard");
-      }
-
-      router.refresh();
+      window.location.href = data.user?.mustChangePassword
+        ? "/change-password"
+        : "/dashboard";
     } catch (err) {
       console.error("Login failed:", err);
-      setError("Unable to sign in right now. Please try again.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Unable to sign in right now. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -66,10 +58,7 @@ export function LoginForm() {
 
         <div className="mt-12 space-y-8">
           <div className="space-y-3">
-            <label
-              htmlFor="username"
-              className="block text-lg font-semibold text-[#24345b]"
-            >
+            <label htmlFor="username" className="block text-lg font-semibold text-[#24345b]">
               Username
             </label>
 
@@ -92,10 +81,7 @@ export function LoginForm() {
           </div>
 
           <div className="space-y-3">
-            <label
-              htmlFor="password"
-              className="block text-lg font-semibold text-[#24345b]"
-            >
+            <label htmlFor="password" className="block text-lg font-semibold text-[#24345b]">
               Password
             </label>
 
@@ -147,10 +133,7 @@ export function LoginForm() {
           </button>
 
           <div className="flex flex-col gap-3 pt-2 text-base sm:flex-row sm:items-center sm:justify-between sm:text-lg">
-            <Link
-              href="/request-access"
-              className="font-medium text-[#5578c4] transition hover:text-[#3558a3]"
-            >
+            <Link href="/request-access" className="font-medium text-[#5578c4] transition hover:text-[#3558a3]">
               Request access
             </Link>
 

@@ -5,5 +5,5 @@ export async function POST(
   context: { params: Promise<{ id: string }> }
 ) {
   const { id } = await context.params;
-  return proxyToBackend(request, `/workstations/${id}/assignments`);
+  return proxyToBackend(request, `/access-requests/${id}/approve`);
 }

@@ -38,8 +38,20 @@ export function getApiErrorMessages(error: unknown) {
   return ["Something went wrong. Please try again."];
 }
 
+function normalizeSiteUrl(url: string) {
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
 function getApiBaseUrl() {
-  return process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
+  if (typeof window !== "undefined") {
+    return "/api";
+  }
+
+  const siteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
+
+  return `${normalizeSiteUrl(siteUrl)}/api`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -49,14 +61,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
-  }
-
-  if (typeof window !== "undefined") {
-    const token = localStorage.getItem("token");
-
-    if (token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
   }
 
   if (typeof window === "undefined") {
@@ -221,21 +225,13 @@ export async function updateAlert(alertId: string, payload: { action: "read" | "
 }
 
 export async function loginUser(payload: { username: string; password: string }) {
-  return request<{
-    user: import("./types").CurrentUser;
-    token?: string;
-  }>("/auth/login", {
+  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
   });
 }
 
 export async function logoutUser() {
-  if (typeof window !== "undefined") {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-  }
-
   return request("/auth/logout", {
     method: "POST"
   });
