@@ -31,6 +31,13 @@ function toCreateAssetPayload(input: ReturnType<typeof assetPayloadSchema.parse>
     warrantyExpiryDate: input.warrantyExpiryDate,
     status: input.status,
     currentLocation: input.currentLocation,
+    assignment:
+      input.currentLocation && /^WS-\d{2}$/i.test(input.currentLocation)
+        ? {
+            workstationCode: input.currentLocation,
+            status: "ACTIVE"
+          }
+        : undefined,
     notes: input.notes
   };
 }
@@ -47,6 +54,13 @@ function toUpdateAssetPayload(input: ReturnType<typeof assetPayloadSchema.parse>
     warrantyExpiryDate: input.warrantyExpiryDate,
     status: input.status,
     currentLocation: input.currentLocation,
+    assignment:
+      input.currentLocation && /^WS-\d{2}$/i.test(input.currentLocation)
+        ? {
+            workstationCode: input.currentLocation,
+            status: "ACTIVE"
+          }
+        : undefined,
     notes: input.notes
   } as UpdateAssetPayload;
 }
