@@ -7,9 +7,9 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch src/dev.ts",
     "build": "npx prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.json",
-    "start": "node dist/server.js",
+    "start": "node dist/dev.js",
     "lint": "tsc --noEmit",
     "postinstall": "npx prisma generate --schema prisma/schema.prisma",
     "db:generate": "npx prisma generate --schema prisma/schema.prisma",
