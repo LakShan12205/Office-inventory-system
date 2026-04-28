@@ -1,9 +1,23 @@
 import { redirect } from "next/navigation";
 import { SystemLogo } from "@/components/branding/system-logo";
 import { LoginForm } from "@/components/auth/login-form";
-import { getCurrentUser } from "@/lib/api";
+import { ApiError, getCurrentUser } from "@/lib/api";
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  try {
+    const { user } = await getCurrentUser();
+
+    if (user.mustChangePassword) {
+      redirect("/change-password");
+    }
+
+    redirect("/dashboard");
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401) {
+      console.error("Login auth check failed:", error);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#eef6f1] via-white to-[#e6f4ec]">
       <div className="grid min-h-screen lg:grid-cols-[1.08fr_0.92fr]">

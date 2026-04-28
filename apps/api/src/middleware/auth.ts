@@ -14,6 +14,20 @@ type AuthTokenPayload = {
   tokenVersion: number;
 };
 
+function parseBearerToken(authorizationHeader?: string | null) {
+  if (!authorizationHeader) {
+    return null;
+  }
+
+  const [scheme, token] = authorizationHeader.split(" ");
+
+  if (!scheme || !token || scheme.toLowerCase() !== "bearer") {
+    return null;
+  }
+
+  return token.trim() || null;
+}
+
 function parseCookies(cookieHeader?: string) {
   if (!cookieHeader) {
     return new Map<string, string>();
@@ -82,7 +96,8 @@ async function resolveAuthUser(req: Request) {
   }
 
   const cookies = parseCookies(req.headers.cookie);
-  const token = cookies.get(AUTH_COOKIE_NAME);
+  const token =
+    parseBearerToken(req.headers.authorization) ?? cookies.get(AUTH_COOKIE_NAME);
 
   if (!token) {
     throw createError(401, "Authentication required.");

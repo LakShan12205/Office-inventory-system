@@ -50,9 +50,14 @@ export async function proxyToBackend(
   const contentType = request.headers.get("content-type");
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
+  const authorization = request.headers.get("authorization");
 
   if (cookie) {
     headers.set("cookie", cookie);
+  }
+
+  if (authorization) {
+    headers.set("authorization", authorization);
   }
 
   if (contentType && method !== "GET" && method !== "HEAD") {
