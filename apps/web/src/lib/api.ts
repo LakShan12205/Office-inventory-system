@@ -1,14 +1,24 @@
 import { cache } from "react";
 
 export class ApiError extends Error {
+  status?: number;
   issues?: Array<{ path?: string; message: string }>;
 
-  constructor(message: string, issues?: Array<{ path?: string; message: string }>) {
+  constructor(
+    message: string,
+    issues?: Array<{ path?: string; message: string }>,
+    status?: number
+  ) {
     super(message);
     this.name = "ApiError";
+    this.status = status;
     this.issues = issues;
   }
 }
+
+const AUTH_TOKEN_STORAGE_KEY = "office_inventory_auth_token";
+const AUTH_LOGOUT_MARKER_KEY = "office_inventory_logged_out";
+const LEGACY_AUTH_COOKIE_NAMES = ["office_inventory_auth", "token", "auth_token"];
 
 function getReadableApiErrorMessage(status: number, data: any) {
   return (
@@ -42,6 +52,103 @@ function normalizeSiteUrl(url: string) {
   return url.endsWith("/") ? url.slice(0, -1) : url;
 }
 
+function isBrowser() {
+  return typeof window !== "undefined";
+}
+
+function getRequestMethod(init?: RequestInit) {
+  return (init?.method ?? "GET").toUpperCase();
+}
+
+function isPublicApiPath(path: string, method: string) {
+  return (
+    path === "/auth/login" ||
+    path === "/auth/logout" ||
+    path === "/request-access" ||
+    path === "/health" ||
+    (path === "/access-requests" && method === "POST")
+  );
+}
+
+function getStoredAuthToken() {
+  if (!isBrowser()) {
+    return null;
+  }
+
+  return (
+    window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ??
+    window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
+  );
+}
+
+function setStoredAuthToken(token: string) {
+  if (!isBrowser()) {
+    return;
+  }
+
+  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  window.localStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
+  window.sessionStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
+}
+
+function expireLegacyAuthCookies() {
+  if (!isBrowser()) {
+    return;
+  }
+
+  for (const cookieName of LEGACY_AUTH_COOKIE_NAMES) {
+    document.cookie = `${cookieName}=; Max-Age=0; path=/; SameSite=Lax`;
+  }
+}
+
+export function clearBrowserAuthSession(markLoggedOut = true) {
+  if (!isBrowser()) {
+    return;
+  }
+
+  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+
+  if (markLoggedOut) {
+    window.localStorage.setItem(AUTH_LOGOUT_MARKER_KEY, "1");
+    window.sessionStorage.setItem(AUTH_LOGOUT_MARKER_KEY, "1");
+  } else {
+    window.localStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
+    window.sessionStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
+  }
+
+  expireLegacyAuthCookies();
+}
+
+export function hasClientLoggedOut() {
+  if (!isBrowser()) {
+    return false;
+  }
+
+  return (
+    window.localStorage.getItem(AUTH_LOGOUT_MARKER_KEY) === "1" ||
+    window.sessionStorage.getItem(AUTH_LOGOUT_MARKER_KEY) === "1"
+  );
+}
+
+function redirectToLogin() {
+  if (!isBrowser() || window.location.pathname === "/login") {
+    return;
+  }
+
+  window.location.replace("/login");
+}
+
+function handleBrowserUnauthorized(path: string, method: string) {
+  if (!isBrowser() || isPublicApiPath(path, method)) {
+    return;
+  }
+
+  clearBrowserAuthSession(true);
+  redirectToLogin();
+}
+
 function getApiBaseUrl() {
   if (typeof window !== "undefined") {
     return "/api";
@@ -58,12 +165,26 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const baseUrl = getApiBaseUrl();
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
+  const method = getRequestMethod(init);
 
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
-  if (typeof window === "undefined") {
+  if (isBrowser()) {
+    const token = getStoredAuthToken();
+
+    if (token && !headers.has("Authorization")) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+
+    if (hasClientLoggedOut() && !isPublicApiPath(path, method)) {
+      redirectToLogin();
+      throw new ApiError("Your session has ended. Please sign in again.", undefined, 401);
+    }
+  }
+
+  if (!isBrowser()) {
     const { cookies } = await import("next/headers");
     const cookieStore = await cookies();
     const cookieHeader = cookieStore.toString();
@@ -100,9 +221,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
+    if (response.status === 401) {
+      handleBrowserUnauthorized(path, method);
+    }
+
     throw new ApiError(
       getReadableApiErrorMessage(response.status, data),
-      Array.isArray(data?.error?.issues) ? data.error.issues : undefined
+      Array.isArray(data?.error?.issues) ? data.error.issues : undefined,
+      response.status
     );
   }
 
@@ -225,16 +351,41 @@ export async function updateAlert(alertId: string, payload: { action: "read" | "
 }
 
 export async function loginUser(payload: { username: string; password: string }) {
-  return request<{ user: import("./types").CurrentUser }>("/auth/login", {
+  const data = await request<{
+    token?: string;
+    user: import("./types").CurrentUser;
+  }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
   });
+
+  if (data.token) {
+    setStoredAuthToken(data.token);
+  } else {
+    clearBrowserAuthSession(false);
+  }
+
+  return data;
 }
 
 export async function logoutUser() {
-  return request("/auth/logout", {
-    method: "POST"
-  });
+  if (hasClientLoggedOut()) {
+    clearBrowserAuthSession(true);
+    return { success: true } as const;
+  }
+
+  try {
+    await request("/auth/logout", {
+      method: "POST"
+    });
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401) {
+      throw error;
+    }
+  }
+
+  clearBrowserAuthSession(true);
+  return { success: true } as const;
 }
 
 export async function getCurrentUser() {

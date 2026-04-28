@@ -4,7 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { SystemLogo } from "@/components/branding/system-logo";
-import { getAccessRequests, getCurrentUser, logoutUser } from "@/lib/api";
+import {
+  ApiError,
+  clearBrowserAuthSession,
+  getAccessRequests,
+  getCurrentUser,
+  hasClientLoggedOut,
+  logoutUser
+} from "@/lib/api";
 
 const navigation = [
   { href: "/dashboard", label: "Dashboard" },
@@ -51,6 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [pendingAccessRequestCount, setPendingAccessRequestCount] = useState(0);
+  const [hasSessionEnded, setHasSessionEnded] = useState(false);
 
   const isAuthPage = useMemo(() => {
     return (
@@ -66,7 +74,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!hasMounted || isAuthPage) {
+    if (!hasMounted || isAuthPage || isLoggingOut || hasSessionEnded || hasClientLoggedOut()) {
       return;
     }
 
@@ -92,10 +100,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             setPendingAccessRequestCount(0);
           }
         }
-      } catch {
+      } catch (error) {
         if (isMounted) {
           setIsAdmin(false);
           setPendingAccessRequestCount(0);
+        }
+
+        if (error instanceof ApiError && error.status === 401) {
+          clearBrowserAuthSession(true);
+          setHasSessionEnded(true);
+          router.replace("/login");
+          router.refresh();
         }
       }
     }
@@ -105,15 +120,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, [hasMounted, isAuthPage]);
+  }, [hasMounted, hasSessionEnded, isAuthPage, isLoggingOut, router]);
 
   async function handleLogout() {
+    if (isLoggingOut) {
+      return;
+    }
+
+    if (hasClientLoggedOut()) {
+      clearBrowserAuthSession(true);
+      setHasSessionEnded(true);
+      router.replace("/login");
+      router.refresh();
+      return;
+    }
+
     setLogoutError(null);
     setIsLoggingOut(true);
 
     try {
       await logoutUser();
-      router.push("/login");
+      setHasSessionEnded(true);
+      setIsAdmin(false);
+      setPendingAccessRequestCount(0);
+      router.replace("/login");
       router.refresh();
     } catch (error) {
       setLogoutError(

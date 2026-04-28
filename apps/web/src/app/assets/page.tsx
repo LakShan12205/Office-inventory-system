@@ -1,13 +1,14 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { AssetArchiveButton } from "@/components/assets/asset-archive-button";
 import { AssetDeleteButton } from "@/components/assets/asset-delete-button";
 import { AssetsBulkDeleteButton } from "@/components/assets/assets-bulk-delete-button";
-import { getAssets, getCurrentUser } from "@/lib/api";
+import { ApiError, getAssets, getCurrentUser } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
 type AssetPageRecord = {
@@ -267,6 +268,10 @@ export default async function AssetsPage({
       };
     }
   } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      redirect("/login");
+    }
+
     console.error("Assets error:", error);
     return <div>Failed to load assets</div>;
   }

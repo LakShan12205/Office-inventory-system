@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getWorkstations } from "@/lib/api";
+import { ApiError, getWorkstations } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
 export const dynamic = "force-dynamic";
@@ -103,6 +104,10 @@ export default async function WorkstationsPage({
     );
     workstations = normalizeWorkstations(result);
   } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      redirect("/login");
+    }
+
     console.error("Workstations error:", error);
     return <div>Failed to load workstations</div>;
   }
