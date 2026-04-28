@@ -29,6 +29,9 @@ app.use(
   })
 );
 
+/**
+ * 🌐 CORS
+ */
 const allowedOrigins = [
   env.NEXT_PUBLIC_SITE_URL,
   env.SITE_URL,
@@ -43,12 +46,14 @@ app.use(
   })
 );
 
+/**
+ * 🧩 Middlewares
+ */
 app.use(express.json());
 app.use(morgan("dev"));
 
 /**
- * ✅ PUBLIC ROUTES (IMPORTANT)
- * 🔥 logout should NOT be blocked
+ * ✅ PUBLIC ROUTES
  */
 app.use("/api/auth", requireTrustedOrigin, authRouter);
 app.use("/api/access-requests", requireTrustedOrigin, accessRequestsRouter);
@@ -64,7 +69,7 @@ app.use("/api/replacements", requireAuth, requirePasswordChangeResolved, replace
 app.use("/api/alerts", requireAuth, requirePasswordChangeResolved, alertsRouter);
 
 /**
- * ❌ 404 handler
+ * ❌ 404
  */
 app.use((req, res) => {
   res.status(404).json({ error: "Not Found" });
