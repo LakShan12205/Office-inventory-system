@@ -30,6 +30,14 @@ function toDateInputValue(value?: string | null) {
   return value.slice(0, 10);
 }
 
+const acGeneralLocationOptions = [
+  "1st Flow",
+  "2nd Flow",
+  "Meeting Room",
+  "Reception",
+  "Admin Office"
+];
+
 export function AssetForm({
   assetTypes,
   initialAsset
@@ -76,9 +84,11 @@ export function AssetForm({
   }));
 
   const isActive = form.status === "ACTIVE";
-  const isWorkstationScope = form.assetScope === "Workstation Device";
   const selectedAssetTypeName =
     assetTypes.find((type) => type.id === form.assetTypeId)?.name ?? null;
+  const isAcAsset = selectedAssetTypeName === "AC";
+  const isWorkstationScope = !isAcAsset && form.assetScope === "Workstation Device";
+  const locationOptions = isAcAsset ? acGeneralLocationOptions : generalLocationOptions;
   const sideOptions = getPlacementSideOptions(selectedAssetTypeName);
   const positionOptions = getPlacementPositionOptions(selectedAssetTypeName);
   const availableWorkstations = flowWorkstations[form.assignmentFlow] ?? [];
@@ -104,7 +114,7 @@ export function AssetForm({
     isWorkstationScope ? form.assignmentFlow || null : form.generalLocation || null,
     isWorkstationScope
       ? form.workstationCode || (!availableWorkstations.length && form.assignmentFlow ? "Workstation area" : null)
-      : form.specificLocationNotes || null,
+      : null,
     sideApplicable ? form.assignmentSide || null : null,
     positionApplicable ? form.assignmentPosition || null : null
   ].filter(Boolean);
@@ -123,12 +133,34 @@ export function AssetForm({
     setForm((current) => ({ ...current, [name]: value }));
   }
 
+  function updateAssetType(assetTypeId: string) {
+    clearFieldError("assetTypeId");
+    const nextAssetTypeName =
+      assetTypes.find((type) => type.id === assetTypeId)?.name ?? null;
+    const nextIsAcAsset = nextAssetTypeName === "AC";
+
+    setForm((current) => ({
+      ...current,
+      assetTypeId,
+      assetScope: nextIsAcAsset ? "Other / Non-Workstation Device" : current.assetScope,
+      assignmentFlow: nextIsAcAsset ? "" : current.assignmentFlow,
+      workstationCode: nextIsAcAsset ? "" : current.workstationCode,
+      assignmentSide: nextIsAcAsset ? "" : current.assignmentSide,
+      assignmentPosition: nextIsAcAsset ? "" : current.assignmentPosition,
+      generalLocation:
+        nextIsAcAsset && !acGeneralLocationOptions.includes(current.generalLocation)
+          ? ""
+          : current.generalLocation,
+      specificLocationNotes: nextIsAcAsset ? "" : current.specificLocationNotes
+    }));
+  }
+
   function updateStatus(value: string) {
     clearFieldError("status");
     setForm((current) => ({
       ...current,
       status: value,
-      assetScope: "Workstation Device",
+      assetScope: isAcAsset ? "Other / Non-Workstation Device" : "Workstation Device",
       assignmentFlow: "",
       workstationCode: "",
       assignmentSide: "",
@@ -198,7 +230,7 @@ export function AssetForm({
     if (!form.status) nextErrors.status = "Please select a status.";
 
     if (isActive) {
-      if (!form.assetScope) nextErrors.assetScope = "Please select an asset scope.";
+      if (!isAcAsset && !form.assetScope) nextErrors.assetScope = "Please select an asset scope.";
 
       if (isWorkstationScope) {
         if (!form.assignmentFlow) nextErrors.assignmentFlow = "Please select a flow.";
@@ -235,7 +267,7 @@ export function AssetForm({
         const resolvedLocation = isActive
           ? isWorkstationScope
             ? form.workstationCode || form.assignmentFlow || "Office Floor"
-            : form.specificLocationNotes || form.generalLocation || "Office Floor"
+            : form.generalLocation || "Office Floor"
           : "Main Store";
 
         const payload = {
@@ -268,7 +300,7 @@ export function AssetForm({
                   }
                 : {
                     generalLocation: form.generalLocation || null,
-                    specificLocationNotes: form.specificLocationNotes || null,
+                    specificLocationNotes: isAcAsset ? null : form.specificLocationNotes || null,
                     startDate: new Date().toISOString()
                   }
               : null,
@@ -311,7 +343,7 @@ export function AssetForm({
             <span className="font-medium">Inventory Type</span>
             <select
               value={form.assetTypeId}
-              onChange={(e) => updateField("assetTypeId", e.target.value)}
+              onChange={(e) => updateAssetType(e.target.value)}
               className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
             >
               {inventoryTypeOptions.map((assetType) => (
@@ -439,28 +471,37 @@ export function AssetForm({
 
           <div>
             <p className="text-sm font-medium text-[var(--text)]">Asset Scope</p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              {["Workstation Device", "Other / Non-Workstation Device"].map((scope) => (
-                <button
-                  key={scope}
-                  type="button"
-                  onClick={() => updateAssetScope(scope)}
-                  className={`rounded-[1.4rem] border px-4 py-4 text-left transition ${
-                    form.assetScope === scope
-                      ? "border-[var(--nav)] bg-[var(--panel-strong)]"
-                      : "border-[var(--border)] bg-white hover:bg-[var(--panel-strong)]"
-                  }`}
-                >
-                  <p className="text-sm font-semibold text-[var(--nav)]">{scope}</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    {scope === "Workstation Device"
-                      ? "Assign this item by flow, workstation, and placement."
-                      : "Assign this item to a general office location."}
-                  </p>
-                </button>
-              ))}
-            </div>
-            {fieldErrors.assetScope ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.assetScope}</span> : null}
+            {isAcAsset ? (
+              <div className="mt-3 rounded-[1.4rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-4">
+                <p className="text-sm font-semibold text-[var(--nav)]">Other / Non-Workstation Device</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  AC units are managed as shared location-based assets and are not assigned to workstations.
+                </p>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {["Workstation Device", "Other / Non-Workstation Device"].map((scope) => (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => updateAssetScope(scope)}
+                    className={`rounded-[1.4rem] border px-4 py-4 text-left transition ${
+                      form.assetScope === scope
+                        ? "border-[var(--nav)] bg-[var(--panel-strong)]"
+                        : "border-[var(--border)] bg-white hover:bg-[var(--panel-strong)]"
+                    }`}
+                  >
+                    <p className="text-sm font-semibold text-[var(--nav)]">{scope}</p>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      {scope === "Workstation Device"
+                        ? "Assign this item by flow, workstation, and placement."
+                        : "Assign this item to a general office location."}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!isAcAsset && fieldErrors.assetScope ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.assetScope}</span> : null}
           </div>
 
           {isWorkstationScope ? (
@@ -572,7 +613,7 @@ export function AssetForm({
                 </p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className={`grid gap-4 ${isAcAsset ? "" : "md:grid-cols-2"}`}>
                 <label className="grid gap-2 text-sm">
                   <span className="font-medium">General Location</span>
                   <select
@@ -581,7 +622,7 @@ export function AssetForm({
                     className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
                   >
                     <option value="">Select general location</option>
-                    {generalLocationOptions.map((location) => (
+                    {locationOptions.map((location) => (
                       <option key={location} value={location}>
                         {location}
                       </option>
@@ -590,15 +631,17 @@ export function AssetForm({
                   {fieldErrors.generalLocation ? <span className="text-xs text-rose-700">{fieldErrors.generalLocation}</span> : null}
                 </label>
 
-                <label className="grid gap-2 text-sm">
-                  <span className="font-medium">Specific Location / Notes</span>
-                  <input
-                    value={form.specificLocationNotes}
-                    onChange={(e) => updateField("specificLocationNotes", e.target.value)}
-                    placeholder="Example: AC in Meeting Room or TV in Reception"
-                    className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
-                  />
-                </label>
+                {!isAcAsset ? (
+                  <label className="grid gap-2 text-sm">
+                    <span className="font-medium">Specific Location / Notes</span>
+                    <input
+                      value={form.specificLocationNotes}
+                      onChange={(e) => updateField("specificLocationNotes", e.target.value)}
+                      placeholder="Example: TV in Reception"
+                      className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                    />
+                  </label>
+                ) : null}
               </div>
             </div>
           )}

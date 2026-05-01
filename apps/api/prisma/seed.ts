@@ -43,6 +43,7 @@ const assetTypeDefinitions = [
   { code: "MON", name: "Monitor", description: "Desk monitor", trackIndividually: true },
   { code: "TV", name: "TV", description: "Wall-mounted display", trackIndividually: true },
   { code: "MACH", name: "Machine", description: "Desktop workstation machine", trackIndividually: true },
+  { code: "AC", name: "AC", description: "Air conditioner", trackIndividually: true },
   { code: "UPS", name: "UPS", description: "Uninterruptible power supply", trackIndividually: true },
   { code: "KEY", name: "Keyboard", description: "Input keyboard", trackIndividually: true },
   { code: "MOU", name: "Mouse", description: "Pointing device", trackIndividually: true },
@@ -59,7 +60,6 @@ async function main() {
   await prisma.repair.deleteMany();
   await prisma.workstationAsset.deleteMany();
   await prisma.asset.deleteMany();
-  await prisma.assetType.deleteMany();
   await prisma.workstation.deleteMany();
 
   /* 🔐 CREATE ADMIN FIRST */
@@ -70,7 +70,15 @@ async function main() {
   const assetTypeIds = new Map<string, string>();
 
   for (const definition of assetTypeDefinitions) {
-    const assetType = await prisma.assetType.create({ data: definition });
+    const assetType = await prisma.assetType.upsert({
+      where: { code: definition.code },
+      update: {
+        name: definition.name,
+        description: definition.description,
+        trackIndividually: definition.trackIndividually
+      },
+      create: definition
+    });
     assetTypeIds.set(definition.name, assetType.id);
   }
 

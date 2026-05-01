@@ -34,6 +34,10 @@ function hasActiveAssignment(asset: AssetRecord) {
   );
 }
 
+function isAcAsset(asset: AssetRecord) {
+  return asset.assetType.name === "AC";
+}
+
 export function ReplacementFormView({
   assets,
   initialContext
@@ -51,7 +55,7 @@ export function ReplacementFormView({
   } | null>(null);
 
   const inventoryCandidates = useMemo(
-    () => assets.filter((asset) => asset.status !== "RETIRED"),
+    () => assets.filter((asset) => asset.status !== "RETIRED" && !isAcAsset(asset)),
     [assets]
   );
 

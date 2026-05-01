@@ -21,6 +21,10 @@ import { AssetRecord, ReplacementRecord } from "@/lib/types";
 
 type ReplacementSource = "WORKSTATION_DEVICE" | "OTHER_DEVICE";
 
+function isReplacementEligibleAsset(asset: AssetRecord) {
+  return asset.assetType.name !== "AC";
+}
+
 function SwapIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.8]">
@@ -78,6 +82,7 @@ export function ReplacementsWorkspace({
   const inventoryCandidates = useMemo(
     () =>
       assets
+        .filter((asset) => isReplacementEligibleAsset(asset))
         .filter((asset) => asset.status !== "RETIRED")
         .sort((a, b) => a.assetCode.localeCompare(b.assetCode)),
     [assets]

@@ -81,6 +81,7 @@ type AssetsResponse = {
 
 const QUICK_TYPE_BUTTONS = [
   { label: "All", value: "" },
+  { label: "AC", value: "AC" },
   { label: "Monitors", value: "Monitor" },
   { label: "Machines", value: "Machine" },
   { label: "UPS", value: "UPS" },
@@ -89,6 +90,7 @@ const QUICK_TYPE_BUTTONS = [
 
 const TYPE_OPTIONS = [
   { label: "All", value: "" },
+  { label: "AC", value: "AC" },
   { label: "Monitor", value: "Monitor" },
   { label: "Machine", value: "Machine" },
   { label: "UPS", value: "UPS" },
@@ -203,6 +205,17 @@ function getAssetTypeIcon(type?: string | null) {
         <path d="M8 7.5v4a4 4 0 0 0 8 0v-3" />
         <path d="M6 5.5h4v2H6z" />
         <path d="M14 4.5h4v3h-4z" />
+      </svg>
+    );
+  }
+
+  if (normalized === "ac") {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <rect x="3.5" y="6" width="17" height="7" rx="2" />
+        <path d="M7 16.5v1" />
+        <path d="M12 16.5v2" />
+        <path d="M17 16.5v1" />
       </svg>
     );
   }
