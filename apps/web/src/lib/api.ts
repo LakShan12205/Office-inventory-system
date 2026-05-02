@@ -166,8 +166,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
   const method = getRequestMethod(init);
+  const isFormDataBody =
+    typeof FormData !== "undefined" && init?.body instanceof FormData;
 
-  if (!headers.has("Content-Type")) {
+  if (!isFormDataBody && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -305,14 +307,20 @@ export async function returnRepair(
 export async function createAsset(payload: unknown) {
   return request("/assets", {
     method: "POST",
-    body: JSON.stringify(payload)
+    body:
+      typeof FormData !== "undefined" && payload instanceof FormData
+        ? payload
+        : JSON.stringify(payload)
   });
 }
 
 export async function updateAsset(id: string, payload: unknown) {
   return request(`/assets/${id}`, {
     method: "PATCH",
-    body: JSON.stringify(payload)
+    body:
+      typeof FormData !== "undefined" && payload instanceof FormData
+        ? payload
+        : JSON.stringify(payload)
   });
 }
 

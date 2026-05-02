@@ -87,6 +87,8 @@ export type AssetRecord = {
   status: string;
   invoiceFileName?: string | null;
   invoiceFileUrl?: string | null;
+  invoiceFileType?: string | null;
+  invoiceFileSize?: number | null;
   currentLocation?: string | null;
   currentLocationDisplay?: string | null;
   displayLocation?: string | null;

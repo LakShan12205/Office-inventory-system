@@ -15,6 +15,21 @@ function formatDate(value?: string | null) {
   });
 }
 
+function formatFileSize(bytes?: number | null) {
+  if (!bytes || bytes <= 0) return "Not recorded";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`;
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`;
+}
+
+function ensurePdfFileName(fileName?: string | null) {
+  if (!fileName) return "invoice.pdf";
+  return fileName.toLowerCase().endsWith(".pdf") ? fileName : `${fileName}.pdf`;
+}
+
 function getAssetTypeIcon(type?: string | null) {
   const iconClass = "h-6 w-6 fill-none stroke-current stroke-[1.8]";
   const normalized = type?.toLowerCase() ?? "";
@@ -156,6 +171,7 @@ export default async function AssetDetailPage({
   const asset = (await getAsset(id)) as AssetRecord;
   const repairs = asset.repairs ?? [];
   const alerts = asset.alerts ?? [];
+  const invoiceDownloadName = ensurePdfFileName(asset.invoiceFileName);
   const isWorkstationAsset = asset.assetScope === "Workstation Device" || asset.workstationAssignments.some((assignment) => assignment.isActive);
   const activeAssignment = asset.workstationAssignments.find((assignment) => assignment.isActive) ?? asset.workstationAssignments[0];
   const currentLocation =
@@ -320,6 +336,61 @@ export default async function AssetDetailPage({
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard title="Documents / Invoice">
+        {asset.invoiceFileUrl ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr]">
+            <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+                Uploaded document
+              </p>
+              <div className="mt-3 space-y-2 text-sm text-[var(--text)]">
+                <p>
+                  <span className="font-semibold text-[var(--nav)]">File name:</span>{" "}
+                  {invoiceDownloadName}
+                </p>
+                <p>
+                  <span className="font-semibold text-[var(--nav)]">File type:</span>{" "}
+                  {asset.invoiceFileType ?? "application/pdf"}
+                </p>
+                <p>
+                  <span className="font-semibold text-[var(--nav)]">File size:</span>{" "}
+                  {formatFileSize(asset.invoiceFileSize)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-start gap-3 rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+                <a
+                  href={`/api/assets/${asset.id}/invoice/view`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-2xl bg-[var(--nav)] px-4 py-3 text-sm font-semibold text-white shadow-[0_14px_28px_rgba(24,49,83,0.18)] transition hover:bg-[#214067]"
+                >
+                View
+              </a>
+              <a
+                href={`/api/assets/${asset.id}/invoice/download`}
+                className="inline-flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm font-semibold text-[var(--nav)] transition hover:border-[#d7c2a6] hover:bg-[var(--panel-strong)]"
+              >
+                Download
+              </a>
+            </div>
+          </div>
+        ) : asset.invoiceFileName ? (
+          <div className="rounded-[1.5rem] border border-dashed border-[var(--border)] bg-white/60 px-5 py-8">
+            <p className="text-sm font-semibold text-[var(--nav)]">
+              File reference saved: {invoiceDownloadName}
+            </p>
+            <p className="mt-2 text-sm text-[var(--muted)]">No uploaded document available.</p>
+          </div>
+        ) : (
+          <EmptyState
+            title="No document uploaded"
+            message="This asset does not have an uploaded invoice or document yet."
+          />
+        )}
+      </SectionCard>
 
       <SectionCard title={assignmentSectionTitle}>
         {asset.workstationAssignments.length > 0 ? (

@@ -101,6 +101,8 @@ export const assetPayloadSchema = z.object({
   currentLocation: z.string().trim().optional().nullable(),
   invoiceFileName: z.string().trim().optional().nullable(),
   invoiceFileUrl: z.string().trim().optional().nullable(),
+  invoiceFileType: z.string().trim().optional().nullable(),
+  invoiceFileSize: z.coerce.number().int().nonnegative().optional().nullable(),
   assignment: z
     .object({
       workstationCode: z.string().trim().optional().nullable(),

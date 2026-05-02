@@ -21,7 +21,7 @@ function buildBackendUrl(path: string) {
 export async function proxyToBackend(
   request: Request,
   path: string,
-  init?: { method?: string; body?: string }
+  init?: { method?: string; body?: BodyInit | null }
 ) {
   let backendUrl: URL;
 
@@ -60,7 +60,9 @@ export async function proxyToBackend(
     headers.set("authorization", authorization);
   }
 
-  if (contentType && method !== "GET" && method !== "HEAD") {
+  const isMultipartRequest = contentType?.toLowerCase().includes("multipart/form-data");
+
+  if (contentType && method !== "GET" && method !== "HEAD" && !isMultipartRequest) {
     headers.set("content-type", contentType);
   }
 
@@ -74,18 +76,41 @@ export async function proxyToBackend(
 
   const body =
     init?.body ??
-    (method === "GET" || method === "HEAD" ? undefined : await request.text());
+    (method === "GET" || method === "HEAD"
+      ? undefined
+      : isMultipartRequest
+        ? await request.formData()
+        : await request.arrayBuffer());
+
+  const requestBody =
+    body instanceof ArrayBuffer
+      ? (body.byteLength > 0 ? body : undefined)
+      : body instanceof FormData
+        ? (() => {
+            const forwarded = new FormData();
+
+            body.forEach((value, key) => {
+              if (value instanceof File) {
+                forwarded.append(key, value, value.name);
+                return;
+              }
+
+              forwarded.append(key, value);
+            });
+
+            return forwarded;
+          })()
+        : body ?? undefined;
 
   const response = await fetch(backendUrl.toString(), {
     method,
     cache: "no-store",
     credentials: "include",
     headers,
-    body
+    body: requestBody
   });
-
-  const text = await response.text();
-  const nextResponse = new NextResponse(text, {
+  const responseBody = await response.arrayBuffer();
+  const nextResponse = new NextResponse(responseBody, {
     status: response.status,
     headers: {
       "Content-Type": response.headers.get("content-type") ?? "application/json"
@@ -95,6 +120,11 @@ export async function proxyToBackend(
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     nextResponse.headers.set("set-cookie", setCookie);
+  }
+
+  const contentDisposition = response.headers.get("content-disposition");
+  if (contentDisposition) {
+    nextResponse.headers.set("content-disposition", contentDisposition);
   }
 
   return nextResponse;

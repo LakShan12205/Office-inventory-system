@@ -9,6 +9,8 @@ import {
 } from "@/lib/asset-mapping";
 import { AssetRecord, AssetType } from "@/lib/types";
 
+const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024;
+
 const flowWorkstations: Record<string, string[]> = {
   "1st Flow": ["WS-07", "WS-08", "WS-09", "WS-10", "WS-11", "WS-12"],
   "2nd Flow": ["WS-01", "WS-02", "WS-03", "WS-04", "WS-05", "WS-06"]
@@ -50,6 +52,7 @@ export function AssetForm({
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [selectedInvoiceFile, setSelectedInvoiceFile] = useState<File | null>(null);
 
   const inventoryTypeOptions = [
     { label: "TV", id: assetTypes.find((type) => type.name === "TV")?.id ?? "" },
@@ -80,7 +83,10 @@ export function AssetForm({
     assignmentPosition: initialAsset?.position ?? "",
     generalLocation: initialAsset?.generalLocation ?? "",
     specificLocationNotes: initialAsset?.specificLocationNotes ?? "",
-    invoiceFileName: initialAsset?.invoiceFileName ?? ""
+    invoiceFileName: initialAsset?.invoiceFileName ?? "",
+    invoiceFileUrl: initialAsset?.invoiceFileUrl ?? "",
+    invoiceFileType: initialAsset?.invoiceFileType ?? "",
+    invoiceFileSize: initialAsset?.invoiceFileSize?.toString() ?? ""
   }));
 
   const isActive = form.status === "ACTIVE";
@@ -198,7 +204,14 @@ export function AssetForm({
   function onInvoiceChange(file: File | null) {
     if (!file) {
       clearFieldError("invoiceFileName");
-      updateField("invoiceFileName", "");
+      setSelectedInvoiceFile(null);
+      setForm((current) => ({
+        ...current,
+        invoiceFileName: initialAsset?.invoiceFileName ?? "",
+        invoiceFileUrl: initialAsset?.invoiceFileUrl ?? "",
+        invoiceFileType: initialAsset?.invoiceFileType ?? "",
+        invoiceFileSize: initialAsset?.invoiceFileSize?.toString() ?? ""
+      }));
       return;
     }
 
@@ -212,9 +225,25 @@ export function AssetForm({
       return;
     }
 
+    if (file.size > MAX_INVOICE_FILE_SIZE) {
+      setFieldErrors((current) => ({
+        ...current,
+        invoiceFileName: "Attached invoice must be 10MB or smaller."
+      }));
+      setError("Attached invoice must be 10MB or smaller.");
+      return;
+    }
+
     setError(null);
     clearFieldError("invoiceFileName");
-    updateField("invoiceFileName", file.name);
+    setSelectedInvoiceFile(file);
+    setForm((current) => ({
+      ...current,
+      invoiceFileName: file.name,
+      invoiceFileUrl: "",
+      invoiceFileType: file.type,
+      invoiceFileSize: String(file.size)
+    }));
   }
 
   function validateForm() {
@@ -288,6 +317,9 @@ export function AssetForm({
             : null,
           currentLocation: resolvedLocation,
           invoiceFileName: form.invoiceFileName || null,
+          invoiceFileUrl: form.invoiceFileUrl || null,
+          invoiceFileType: form.invoiceFileType || null,
+          invoiceFileSize: form.invoiceFileSize ? Number(form.invoiceFileSize) : null,
           assignment:
             isActive
               ? isWorkstationScope
@@ -308,10 +340,20 @@ export function AssetForm({
           specification: null
         };
 
+        const formData = new FormData();
+        formData.append("payload", JSON.stringify(payload));
+
+        if (selectedInvoiceFile) {
+          formData.append("invoice", selectedInvoiceFile);
+        }
+
+        console.log("selectedInvoiceFile before submit:", selectedInvoiceFile);
+        console.log("FormData has invoice:", formData.has("invoice"));
+
         if (initialAsset?.id) {
-          await updateAsset(initialAsset.id, payload);
+          await updateAsset(initialAsset.id, formData);
         } else {
-          await createAsset(payload);
+          await createAsset(formData);
         }
 
         setSuccessMessage(
@@ -453,7 +495,7 @@ export function AssetForm({
               className="rounded-2xl border border-[var(--border)] bg-white px-4 py-[0.8rem] text-sm"
             />
             <span className="text-xs text-[var(--muted)]">
-              PDF only{form.invoiceFileName ? ` - selected: ${form.invoiceFileName}` : ""}
+              PDF only, max 10MB{form.invoiceFileName ? ` - selected: ${form.invoiceFileName}` : ""}
             </span>
             {fieldErrors.invoiceFileName ? <span className="text-xs text-rose-700">{fieldErrors.invoiceFileName}</span> : null}
           </label>

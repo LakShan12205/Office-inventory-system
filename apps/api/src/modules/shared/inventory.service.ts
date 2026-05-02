@@ -233,6 +233,10 @@ function mapAssetRecord<T extends {
   currentLocation?: string | null;
   assetScope?: string | null;
   warrantyExpiryDate?: Date | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+  invoiceFileType?: string | null;
+  invoiceFileSize?: number | null;
   workstationAssignments: Array<{
     id: string;
     assignmentType: string;
@@ -254,6 +258,10 @@ function mapAssetRecord<T extends {
   return {
     ...asset,
     warrantyExpiryDate: asset.warrantyExpiryDate?.toISOString() ?? null,
+    invoiceFileName: asset.invoiceFileName ?? null,
+    invoiceFileUrl: asset.invoiceFileUrl ?? null,
+    invoiceFileType: asset.invoiceFileType ?? null,
+    invoiceFileSize: asset.invoiceFileSize ?? null,
     assetScope:
       assetScopeLabel(asset.assetScope, Boolean(activeAssignment?.workstation?.code)) ?? undefined,
     currentLocation: currentLocationDisplay,
@@ -1751,6 +1759,8 @@ export async function createAsset(input: {
   currentLocation?: string | null;
   invoiceFileName?: string | null;
   invoiceFileUrl?: string | null;
+  invoiceFileType?: string | null;
+  invoiceFileSize?: number | null;
   assignment?: {
     workstationCode?: string | null;
     generalLocation?: string | null;
@@ -1815,6 +1825,8 @@ export async function createAsset(input: {
       currentLocation: input.currentLocation,
       invoiceFileName: input.invoiceFileName,
       invoiceFileUrl: input.invoiceFileUrl,
+      invoiceFileType: input.invoiceFileType,
+      invoiceFileSize: input.invoiceFileSize,
       notes: input.notes
     },
     include: {
@@ -1880,6 +1892,8 @@ export async function updateAsset(id: string, input: {
   currentLocation?: string | null;
   invoiceFileName?: string | null;
   invoiceFileUrl?: string | null;
+  invoiceFileType?: string | null;
+  invoiceFileSize?: number | null;
   assignment?: {
     workstationCode?: string | null;
     generalLocation?: string | null;
@@ -1989,6 +2003,8 @@ export async function updateAsset(id: string, input: {
       currentLocation: input.currentLocation,
       invoiceFileName: input.invoiceFileName,
       invoiceFileUrl: input.invoiceFileUrl,
+      invoiceFileType: input.invoiceFileType,
+      invoiceFileSize: input.invoiceFileSize,
       notes: input.notes
     },
   });

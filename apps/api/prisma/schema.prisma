@@ -145,6 +145,8 @@ model Asset {
   currentLocation       String?
   invoiceFileName       String?
   invoiceFileUrl        String?
+  invoiceFileType       String?
+  invoiceFileSize       Int?
   notes                 String?
   workstationAssignments WorkstationAsset[]
   repairs               Repair[]

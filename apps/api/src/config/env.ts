@@ -18,7 +18,12 @@ const envSchema = z.object({
     .string()
     .url("NEXT_PUBLIC_API_URL must be a valid URL")
     .optional(),
-  VERCEL_URL: z.string().min(1).optional()
+  VERCEL_URL: z.string().min(1).optional(),
+  CLOUDINARY_CLOUD_NAME: z.string().min(1).optional(),
+  CLOUDINARY_API_KEY: z.string().min(1).optional(),
+  CLOUDINARY_API_SECRET: z.string().min(1).optional(),
+  SUPABASE_URL: z.string().url("SUPABASE_URL must be a valid URL").optional(),
+  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1).optional()
 });
 
 const parsed = envSchema.safeParse(process.env);
