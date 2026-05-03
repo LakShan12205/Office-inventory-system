@@ -5,6 +5,19 @@ import { prisma } from "../../db/prisma.js";
 const CURRENT_WORKSTATION_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
 const LIVE_ASSIGNABLE_ASSET_STATUSES = ["ACTIVE", "TEMPORARY_REPLACEMENT"] as const;
 const ACTIVE_REPAIR_STATUSES = ["REPORTED", "SENT", "IN_PROGRESS"] as const;
+const SIM_TYPE_OPTIONS = ["Physical SIM", "eSIM"] as const;
+const NETWORK_PROVIDER_OPTIONS = ["Mobitel", "Dialog", "Hutch", "Airtel"] as const;
+const ADAPTER_TYPE_OPTIONS = [
+  "Laptop Charger",
+  "Monitor Adapter",
+  "TV Adapter",
+  "Router Adapter",
+  "Switch Adapter",
+  "Phone Charger",
+  "Tablet Charger",
+  "CCTV Adapter",
+  "Other"
+] as const;
 
 const currentWorkstationAssignmentWhere = {
   isActive: true,
@@ -152,6 +165,175 @@ function supportsLiveAssignment(status: string) {
   );
 }
 
+function normalizeAssetTypeKey(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+async function findExistingActiveWorkstationAssetByType(args: {
+  workstationId: string;
+  assetTypeId: string;
+  excludeAssetId?: string;
+}) {
+  return prisma.workstationAsset.findFirst({
+    where: {
+      workstationId: args.workstationId,
+      isActive: true,
+      status: "ACTIVE",
+      assetId: args.excludeAssetId ? { not: args.excludeAssetId } : undefined,
+      asset: {
+        deletedAt: null,
+        assetTypeId: args.assetTypeId,
+        status: { in: [...CURRENT_WORKSTATION_ASSET_STATUSES] }
+      }
+    },
+    include: {
+      asset: {
+        include: { assetType: true }
+      },
+      workstation: true
+    }
+  });
+}
+
+async function validateAssetAssignmentRules(args: {
+  assetId?: string;
+  assetType: { id: string; name: string };
+  status: string;
+  workstation?: { id: string; code: string } | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  assignment?: {
+    workstationCode?: string | null;
+    generalLocation?: string | null;
+    specificLocationNotes?: string | null;
+    side?: string | null;
+    position?: string | null;
+    status?: "ACTIVE" | "INACTIVE";
+  } | null;
+  relatedAssetId?: string | null;
+}) {
+  const typeKey = normalizeAssetTypeKey(args.assetType.name);
+  const isActiveAssignment = supportsLiveAssignment(args.status) && (args.assignment?.status ?? "ACTIVE") === "ACTIVE";
+
+  if (!isActiveAssignment) {
+    return;
+  }
+
+  if (["adapter", "sim", "chair", "table"].includes(typeKey)) {
+    if (!args.workstation?.id || !args.assignment?.workstationCode) {
+      throw createError(400, `${args.assetType.name} must be assigned to a workstation when active.`);
+    }
+  }
+
+  if (typeKey === "adapter" && !args.assignment?.side?.trim()) {
+    throw createError(400, "Adapter requires a Left or Right side selection.");
+  }
+
+  if (typeKey === "adapter" && !["Left", "Right"].includes(args.assignment?.side ?? "")) {
+    throw createError(400, "Adapter side must be exactly Left or Right.");
+  }
+
+  if (
+    typeKey === "adapter" &&
+    args.adapterType &&
+    !ADAPTER_TYPE_OPTIONS.includes(args.adapterType as (typeof ADAPTER_TYPE_OPTIONS)[number])
+  ) {
+    throw createError(
+      400,
+      "Adapter type must be Laptop Charger, Monitor Adapter, TV Adapter, Router Adapter, Switch Adapter, Phone Charger, Tablet Charger, CCTV Adapter, or Other."
+    );
+  }
+
+  if (typeKey === "sim") {
+    if (args.simType && !SIM_TYPE_OPTIONS.includes(args.simType as (typeof SIM_TYPE_OPTIONS)[number])) {
+      throw createError(400, "SIM type must be Physical SIM or eSIM.");
+    }
+
+    if (
+      args.networkProvider &&
+      !NETWORK_PROVIDER_OPTIONS.includes(
+        args.networkProvider as (typeof NETWORK_PROVIDER_OPTIONS)[number]
+      )
+    ) {
+      throw createError(400, "Network provider must be Mobitel, Dialog, Hutch, or Airtel.");
+    }
+
+    if (args.assignment?.side) {
+      throw createError(400, "SIM does not use side assignment.");
+    }
+
+    if (args.assignment?.position) {
+      throw createError(400, "SIM does not use position assignment.");
+    }
+
+    if (!args.relatedAssetId) {
+      throw createError(400, "SIM requires a related phone assignment.");
+    }
+
+    if (!args.workstation?.id) {
+      throw createError(400, "SIM requires an active workstation assignment.");
+    }
+
+    const relatedPhone = await prisma.asset.findUnique({
+      where: { id: args.relatedAssetId },
+      include: {
+        assetType: true,
+        workstationAssignments: {
+          where: { isActive: true, status: "ACTIVE" },
+          include: { workstation: true },
+          orderBy: { assignedDate: "desc" }
+        }
+      }
+    });
+
+    if (!relatedPhone || relatedPhone.deletedAt) {
+      throw createError(404, "Related phone was not found.");
+    }
+
+    if (normalizeAssetTypeKey(relatedPhone.assetType.name) !== "phone") {
+      throw createError(409, "SIM can only be linked to a phone asset.");
+    }
+
+    const relatedPhoneWorkstationId = relatedPhone.workstationAssignments[0]?.workstationId ?? null;
+    if (!relatedPhoneWorkstationId || relatedPhoneWorkstationId !== args.workstation.id) {
+      throw createError(409, "Selected phone must be actively assigned to the selected workstation.");
+    }
+
+    const existingSim = await prisma.asset.findFirst({
+      where: {
+        deletedAt: null,
+        id: args.assetId ? { not: args.assetId } : undefined,
+        relatedAssetId: args.relatedAssetId,
+        status: { in: [...CURRENT_WORKSTATION_ASSET_STATUSES] },
+        assetType: {
+          name: { equals: "SIM", mode: "insensitive" }
+        }
+      }
+    });
+
+    if (existingSim) {
+      throw createError(409, "This phone already has an active SIM assigned.");
+    }
+  }
+
+  if (typeKey === "chair" || typeKey === "table") {
+    const existing = await findExistingActiveWorkstationAssetByType({
+      workstationId: args.workstation!.id,
+      assetTypeId: args.assetType.id,
+      excludeAssetId: args.assetId
+    });
+
+    if (existing) {
+      throw createError(
+        409,
+        `${existing.workstation?.code ?? "This workstation"} already has an active ${args.assetType.name}.`
+      );
+    }
+  }
+}
+
 function assertAssignmentAllowedForStatus(
   status: string,
   assignment?: {
@@ -233,10 +415,22 @@ function mapAssetRecord<T extends {
   currentLocation?: string | null;
   assetScope?: string | null;
   warrantyExpiryDate?: Date | null;
+  relatedAssetId?: string | null;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
+  packageType?: string | null;
   invoiceFileName?: string | null;
   invoiceFileUrl?: string | null;
   invoiceFileType?: string | null;
   invoiceFileSize?: number | null;
+  relatedAsset?: {
+    id: string;
+    assetCode: string;
+    assetType?: { id?: string; code?: string; name?: string } | null;
+  } | null;
   workstationAssignments: Array<{
     id: string;
     assignmentType: string;
@@ -258,10 +452,23 @@ function mapAssetRecord<T extends {
   return {
     ...asset,
     warrantyExpiryDate: asset.warrantyExpiryDate?.toISOString() ?? null,
+    relatedAssetId: asset.relatedAssetId ?? null,
+    mobileNumber: asset.mobileNumber ?? null,
+    networkProvider: asset.networkProvider ?? null,
+    simType: asset.simType ?? null,
+    adapterType: asset.adapterType ?? null,
+    otherAdapterType: asset.otherAdapterType ?? null,
     invoiceFileName: asset.invoiceFileName ?? null,
     invoiceFileUrl: asset.invoiceFileUrl ?? null,
     invoiceFileType: asset.invoiceFileType ?? null,
     invoiceFileSize: asset.invoiceFileSize ?? null,
+    relatedAsset: asset.relatedAsset
+      ? {
+          id: asset.relatedAsset.id,
+          assetCode: asset.relatedAsset.assetCode,
+          assetType: asset.relatedAsset.assetType ?? null
+        }
+      : null,
     assetScope:
       assetScopeLabel(asset.assetScope, Boolean(activeAssignment?.workstation?.code)) ?? undefined,
     currentLocation: currentLocationDisplay,
@@ -749,6 +956,9 @@ export async function listAssets(filters: {
     },
     include: {
       assetType: true,
+      relatedAsset: {
+        include: { assetType: true }
+      },
       workstationAssignments: {
         include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }
@@ -913,6 +1123,9 @@ export async function getAssetById(id: string) {
     where: { id },
     include: {
       assetType: true,
+      relatedAsset: {
+        include: { assetType: true }
+      },
       workstationAssignments: {
         include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }
@@ -1741,9 +1954,16 @@ export async function listAssetTypes() {
 export async function createAsset(input: {
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
+  packageType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   warrantyExpiryDate?: string | null;
@@ -1795,6 +2015,14 @@ export async function createAsset(input: {
     throw createError(409, "Serial number already exists.");
   }
 
+  const assetType = await prisma.assetType.findUnique({
+    where: { id: input.assetTypeId }
+  });
+
+  if (!assetType) {
+    throw createError(404, "Selected asset type was not found.");
+  }
+
   const workstation = input.assignment?.workstationCode
     ? await prisma.workstation.findFirst({
         where: {
@@ -1809,14 +2037,32 @@ export async function createAsset(input: {
   }
 
   assertAssignmentAllowedForStatus(input.status, input.assignment);
+  await validateAssetAssignmentRules({
+    assetType,
+    status: input.status,
+    workstation,
+    adapterType: input.adapterType ?? null,
+    otherAdapterType: input.otherAdapterType ?? null,
+    networkProvider: input.networkProvider ?? null,
+    simType: input.simType ?? null,
+    assignment: input.assignment,
+    relatedAssetId: input.relatedAssetId
+  });
 
   const asset = await prisma.asset.create({
     data: {
       assetCode: input.assetCode,
       assetTypeId: input.assetTypeId,
+      relatedAssetId: input.relatedAssetId ?? null,
       brand: input.brand,
       model: input.model,
       serialNumber: input.serialNumber,
+      mobileNumber: input.mobileNumber ?? null,
+      networkProvider: input.networkProvider ?? null,
+      simType: input.simType ?? null,
+      adapterType: input.adapterType ?? null,
+      otherAdapterType: input.adapterType === "Other" ? input.otherAdapterType ?? null : null,
+      packageType: input.packageType ?? null,
       specification: input.specification,
       purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : null,
       warrantyExpiryDate: input.warrantyExpiryDate ? new Date(input.warrantyExpiryDate) : null,
@@ -1831,6 +2077,9 @@ export async function createAsset(input: {
     },
     include: {
       assetType: true,
+      relatedAsset: {
+        include: { assetType: true }
+      },
       workstationAssignments: {
         include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }
@@ -1861,6 +2110,9 @@ export async function createAsset(input: {
     where: { id: asset.id },
     include: {
       assetType: true,
+      relatedAsset: {
+        include: { assetType: true }
+      },
       workstationAssignments: {
         include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }
@@ -1874,9 +2126,16 @@ export async function createAsset(input: {
 export async function updateAsset(id: string, input: {
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
+  packageType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   warrantyExpiryDate?: string | null;
@@ -1944,6 +2203,14 @@ export async function updateAsset(id: string, input: {
     throw createError(409, "Serial number already exists.");
   }
 
+  const assetType = await prisma.assetType.findUnique({
+    where: { id: input.assetTypeId }
+  });
+
+  if (!assetType) {
+    throw createError(404, "Selected asset type was not found.");
+  }
+
   const workstation = input.assignment?.workstationCode
     ? await prisma.workstation.findFirst({
         where: {
@@ -1958,6 +2225,18 @@ export async function updateAsset(id: string, input: {
   }
 
   assertAssignmentAllowedForStatus(input.status, input.assignment);
+  await validateAssetAssignmentRules({
+    assetId: id,
+    assetType,
+    status: input.status,
+    workstation,
+    adapterType: input.adapterType ?? null,
+    otherAdapterType: input.otherAdapterType ?? null,
+    networkProvider: input.networkProvider ?? null,
+    simType: input.simType ?? null,
+    assignment: input.assignment,
+    relatedAssetId: input.relatedAssetId
+  });
 
   const activeAssignment =
     existingAsset.workstationAssignments.find(
@@ -1992,9 +2271,21 @@ export async function updateAsset(id: string, input: {
     data: {
       assetCode: input.assetCode,
       assetTypeId: input.assetTypeId,
+      relatedAssetId: input.relatedAssetId ?? null,
       brand: input.brand,
       model: input.model,
       serialNumber: input.serialNumber,
+      mobileNumber: input.mobileNumber ?? null,
+      networkProvider: input.networkProvider ?? null,
+      simType: input.simType ?? null,
+      adapterType: input.adapterType ?? null,
+      otherAdapterType:
+        input.adapterType === undefined
+          ? existingAsset.otherAdapterType ?? null
+          : input.adapterType === "Other"
+            ? input.otherAdapterType ?? null
+            : null,
+      packageType: input.packageType === undefined ? existingAsset.packageType ?? null : input.packageType ?? null,
       specification: input.specification,
       purchaseDate: input.purchaseDate ? new Date(input.purchaseDate) : null,
       warrantyExpiryDate: input.warrantyExpiryDate ? new Date(input.warrantyExpiryDate) : null,
@@ -2045,6 +2336,9 @@ export async function updateAsset(id: string, input: {
     where: { id },
     include: {
       assetType: true,
+      relatedAsset: {
+        include: { assetType: true }
+      },
       workstationAssignments: {
         include: assetAssignmentInclude,
         orderBy: { assignedDate: "desc" }

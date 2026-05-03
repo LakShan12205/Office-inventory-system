@@ -47,6 +47,8 @@ temp/
 
 # Backup files (VERY IMPORTANT)
 *.sql
+!apps/api/prisma/migrations/20260504090000_add_asset_related_phone_and_furniture_fields/migration.sql
+!apps/api/prisma/migrations/20260504113000_add_asset_adapter_type_fields/migration.sql
 *.zip
 *.bak
 *.backup

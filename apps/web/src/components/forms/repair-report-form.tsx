@@ -558,7 +558,7 @@ export function RepairReportForm({
                   className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
                 >
                   <option value="">All Device Types</option>
-                  {["Machine", "Monitor", "Keyboard", "Mouse", "UPS", "Phone", "Tab"].map((type) => (
+                  {["Machine", "Monitor", "Keyboard", "Mouse", "UPS", "Phone", "Tab", "Adapter", "SIM", "Chair", "Table"].map((type) => (
                     <option key={type} value={type}>
                       {type}
                     </option>
@@ -633,7 +633,7 @@ export function RepairReportForm({
                 className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
               >
                 <option value="">All Asset Types</option>
-                {["Machine", "Monitor", "Keyboard", "Mouse", "UPS", "Phone", "Tab", "TV", "AC"].map((type) => (
+                {["Machine", "Monitor", "Keyboard", "Mouse", "UPS", "Phone", "Tab", "TV", "AC", "Adapter", "SIM", "Chair", "Table"].map((type) => (
                   <option key={type} value={type}>
                     {type}
                   </option>

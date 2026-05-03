@@ -45,6 +45,19 @@ export const repairStatusSchema = z.enum(["REPORTED", "SENT", "IN_PROGRESS", "RE
 export const replacementStatusSchema = z.enum(["ACTIVE", "REMOVED", "PENDING_RESTORE"]);
 export const alertStatusSchema = z.enum(["NEW", "READ", "RESOLVED"]);
 export const alertPrioritySchema = z.enum(["LOW", "MEDIUM", "HIGH"]);
+const simTypeSchema = optionalEnumValue(["Physical SIM", "eSIM"]);
+const networkProviderSchema = optionalEnumValue(["Mobitel", "Dialog", "Hutch", "Airtel"]);
+const adapterTypeSchema = optionalEnumValue([
+  "Laptop Charger",
+  "Monitor Adapter",
+  "TV Adapter",
+  "Router Adapter",
+  "Switch Adapter",
+  "Phone Charger",
+  "Tablet Charger",
+  "CCTV Adapter",
+  "Other"
+]);
 
 export const workstationQuerySchema = z.object({
   search: optionalTrimmedString,
@@ -90,9 +103,15 @@ export const workstationPayloadSchema = z.object({
 export const assetPayloadSchema = z.object({
   assetCode: z.string().trim().min(3),
   assetTypeId: z.string().trim().min(1),
+  relatedAssetId: z.string().trim().optional().nullable(),
   brand: z.string().trim().min(1),
   model: z.string().trim().min(1),
   serialNumber: z.string().trim().min(1),
+  mobileNumber: z.string().trim().optional().nullable(),
+  networkProvider: networkProviderSchema.nullable(),
+  simType: simTypeSchema.nullable(),
+  adapterType: adapterTypeSchema.nullable(),
+  otherAdapterType: z.string().trim().optional().nullable(),
   specification: z.string().trim().optional().nullable(),
   purchaseDate: z.string().datetime().optional().nullable(),
   warrantyExpiryDate: z.string().datetime().optional().nullable(),

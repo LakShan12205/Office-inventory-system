@@ -1,20 +1,29 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createAsset, updateAsset } from "@/lib/api";
 import {
+  getAssignmentWorkstationCode,
   getPlacementPositionOptions,
   getPlacementSideOptions
 } from "@/lib/asset-mapping";
-import { AssetRecord, AssetType } from "@/lib/types";
+import { AssetRecord, AssetType, WorkstationListItem } from "@/lib/types";
 
 const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024;
-
-const flowWorkstations: Record<string, string[]> = {
-  "1st Flow": ["WS-07", "WS-08", "WS-09", "WS-10", "WS-11", "WS-12"],
-  "2nd Flow": ["WS-01", "WS-02", "WS-03", "WS-04", "WS-05", "WS-06"]
-};
+const simTypeOptions = ["Physical SIM", "eSIM"] as const;
+const networkProviderOptions = ["Mobitel", "Dialog", "Hutch", "Airtel"] as const;
+const adapterTypeOptions = [
+  "Laptop Charger",
+  "Monitor Adapter",
+  "TV Adapter",
+  "Router Adapter",
+  "Switch Adapter",
+  "Phone Charger",
+  "Tablet Charger",
+  "CCTV Adapter",
+  "Other"
+] as const;
 
 const generalLocationOptions = [
   "Ground Floor",
@@ -40,11 +49,18 @@ const acGeneralLocationOptions = [
   "Admin Office"
 ];
 
+const workstationFlowOptions = ["Ground", "1st Flow", "2nd Flow", "3rd Flow"];
+const forcedWorkstationFlowOptions = ["1st Flow", "2nd Flow"];
+
 export function AssetForm({
   assetTypes,
+  assets,
+  workstations,
   initialAsset
 }: {
   assetTypes: AssetType[];
+  assets: AssetRecord[];
+  workstations: WorkstationListItem[];
   initialAsset?: AssetRecord;
 }) {
   const router = useRouter();
@@ -58,6 +74,10 @@ export function AssetForm({
     { label: "TV", id: assetTypes.find((type) => type.name === "TV")?.id ?? "" },
     { label: "Machine", id: assetTypes.find((type) => type.name === "Machine")?.id ?? "" },
     { label: "Monitor", id: assetTypes.find((type) => type.name === "Monitor")?.id ?? "" },
+    { label: "Adapter", id: assetTypes.find((type) => type.name === "Adapter")?.id ?? "" },
+    { label: "SIM", id: assetTypes.find((type) => type.name === "SIM")?.id ?? "" },
+    { label: "Chair", id: assetTypes.find((type) => type.name === "Chair")?.id ?? "" },
+    { label: "Table", id: assetTypes.find((type) => type.name === "Table")?.id ?? "" },
     { label: "AC", id: assetTypes.find((type) => type.name === "AC")?.id ?? "" },
     { label: "VGA Cable", id: assetTypes.find((type) => type.name === "VGA Cable")?.id ?? "" },
     { label: "Keyboard", id: assetTypes.find((type) => type.name === "Keyboard")?.id ?? "" },
@@ -70,9 +90,15 @@ export function AssetForm({
   const [form, setForm] = useState(() => ({
     assetCode: initialAsset?.assetCode ?? "",
     assetTypeId: initialAsset?.assetType.id ?? inventoryTypeOptions[0]?.id ?? assetTypes[0]?.id ?? "",
+    relatedAssetId: initialAsset?.relatedAssetId ?? "",
     brand: initialAsset?.brand ?? "",
     model: initialAsset?.model ?? "",
     serialNumber: initialAsset?.serialNumber ?? "",
+    mobileNumber: initialAsset?.mobileNumber ?? "",
+    networkProvider: initialAsset?.networkProvider ?? "",
+    simType: initialAsset?.simType ?? "",
+    adapterType: initialAsset?.adapterType ?? "",
+    otherAdapterType: initialAsset?.otherAdapterType ?? "",
     purchaseDate: toDateInputValue(initialAsset?.purchaseDate),
     warrantyExpiryDate: toDateInputValue(initialAsset?.warrantyExpiryDate),
     status: initialAsset?.status ?? "IN_STORE",
@@ -92,12 +118,66 @@ export function AssetForm({
   const isActive = form.status === "ACTIVE";
   const selectedAssetTypeName =
     assetTypes.find((type) => type.id === form.assetTypeId)?.name ?? null;
+  const isAdapterAsset = selectedAssetTypeName === "Adapter";
+  const isSimAsset = selectedAssetTypeName === "SIM";
+  const isChairAsset = selectedAssetTypeName === "Chair";
+  const isTableAsset = selectedAssetTypeName === "Table";
   const isAcAsset = selectedAssetTypeName === "AC";
-  const isWorkstationScope = !isAcAsset && form.assetScope === "Workstation Device";
+  const forceWorkstationScope = isAdapterAsset || isSimAsset || isChairAsset || isTableAsset;
+  const isWorkstationScope = forceWorkstationScope || (!isAcAsset && form.assetScope === "Workstation Device");
   const locationOptions = isAcAsset ? acGeneralLocationOptions : generalLocationOptions;
   const sideOptions = getPlacementSideOptions(selectedAssetTypeName);
   const positionOptions = getPlacementPositionOptions(selectedAssetTypeName);
-  const availableWorkstations = flowWorkstations[form.assignmentFlow] ?? [];
+  const flowOptions = forceWorkstationScope ? forcedWorkstationFlowOptions : workstationFlowOptions;
+  const availableWorkstations = useMemo(
+    () =>
+      workstations.filter(
+        (workstation) =>
+          workstation.location === form.assignmentFlow &&
+          workstation.status !== "INACTIVE"
+      ),
+    [form.assignmentFlow, workstations]
+  );
+  const relatedPhoneOptions = useMemo(
+    () =>
+      assets.filter((asset) => asset.id !== initialAsset?.id)
+        .filter((asset) => asset.assetType.name === "Phone")
+        .filter(
+          (asset) =>
+            asset.id === form.relatedAssetId ||
+            getAssignmentWorkstationCode(asset) === form.workstationCode
+        )
+        .filter((asset) => asset.status === "ACTIVE")
+        .map((asset) => ({
+          id: asset.id,
+          label: `${asset.assetCode} | ${asset.brand} ${asset.model}`
+        })),
+    [assets, form.relatedAssetId, form.workstationCode, initialAsset?.id]
+  );
+  const workstationTypeConflict = useMemo(() => {
+    if (!isActive || !form.workstationCode || !(isChairAsset || isTableAsset)) {
+      return null;
+    }
+
+    const conflicting = assets.find((asset) => {
+      if (asset.id === initialAsset?.id) return false;
+      if (asset.assetType.name !== selectedAssetTypeName) return false;
+      if (asset.status !== "ACTIVE") return false;
+      return getAssignmentWorkstationCode(asset) === form.workstationCode;
+    });
+
+    return conflicting
+      ? `${form.workstationCode} already has an active ${selectedAssetTypeName}.`
+      : null;
+  }, [
+    assets,
+    form.workstationCode,
+    initialAsset?.id,
+    isActive,
+    isChairAsset,
+    isTableAsset,
+    selectedAssetTypeName
+  ]);
   const sideApplicable =
     isActive &&
     sideOptions.length > 0 &&
@@ -144,15 +224,29 @@ export function AssetForm({
     const nextAssetTypeName =
       assetTypes.find((type) => type.id === assetTypeId)?.name ?? null;
     const nextIsAcAsset = nextAssetTypeName === "AC";
+    const nextForceWorkstationScope = ["Adapter", "SIM", "Chair", "Table"].includes(
+      nextAssetTypeName ?? ""
+    );
+    const nextIsSimAsset = nextAssetTypeName === "SIM";
 
     setForm((current) => ({
       ...current,
       assetTypeId,
-      assetScope: nextIsAcAsset ? "Other / Non-Workstation Device" : current.assetScope,
+      assetScope: nextIsAcAsset
+        ? "Other / Non-Workstation Device"
+        : nextForceWorkstationScope
+          ? "Workstation Device"
+          : current.assetScope,
       assignmentFlow: nextIsAcAsset ? "" : current.assignmentFlow,
       workstationCode: nextIsAcAsset ? "" : current.workstationCode,
       assignmentSide: nextIsAcAsset ? "" : current.assignmentSide,
       assignmentPosition: nextIsAcAsset ? "" : current.assignmentPosition,
+      relatedAssetId: nextIsSimAsset ? current.relatedAssetId : "",
+      mobileNumber: nextIsSimAsset ? current.mobileNumber : "",
+      networkProvider: nextIsSimAsset ? current.networkProvider : "",
+      simType: nextIsSimAsset ? current.simType : "",
+      adapterType: nextAssetTypeName === "Adapter" ? current.adapterType : "",
+      otherAdapterType: nextAssetTypeName === "Adapter" && current.adapterType === "Other" ? current.otherAdapterType : "",
       generalLocation:
         nextIsAcAsset && !acGeneralLocationOptions.includes(current.generalLocation)
           ? ""
@@ -166,11 +260,18 @@ export function AssetForm({
     setForm((current) => ({
       ...current,
       status: value,
-      assetScope: isAcAsset ? "Other / Non-Workstation Device" : "Workstation Device",
+      assetScope: isAcAsset
+        ? "Other / Non-Workstation Device"
+        : forceWorkstationScope
+          ? "Workstation Device"
+          : "Workstation Device",
       assignmentFlow: "",
       workstationCode: "",
       assignmentSide: "",
       assignmentPosition: "",
+      relatedAssetId: isSimAsset ? "" : current.relatedAssetId,
+      adapterType: isAdapterAsset ? current.adapterType : "",
+      otherAdapterType: isAdapterAsset && current.adapterType === "Other" ? current.otherAdapterType : "",
       generalLocation: "",
       specificLocationNotes: ""
     }));
@@ -185,6 +286,7 @@ export function AssetForm({
       workstationCode: "",
       assignmentSide: "",
       assignmentPosition: "",
+      relatedAssetId: "",
       generalLocation: "",
       specificLocationNotes: ""
     }));
@@ -197,7 +299,8 @@ export function AssetForm({
       assignmentFlow: flow,
       workstationCode: "",
       assignmentSide: "",
-      assignmentPosition: ""
+      assignmentPosition: "",
+      relatedAssetId: ""
     }));
   }
 
@@ -259,18 +362,31 @@ export function AssetForm({
     if (!form.status) nextErrors.status = "Please select a status.";
 
     if (isActive) {
-      if (!isAcAsset && !form.assetScope) nextErrors.assetScope = "Please select an asset scope.";
+      if (!isAcAsset && !forceWorkstationScope && !form.assetScope) {
+        nextErrors.assetScope = "Please select an asset scope.";
+      }
 
       if (isWorkstationScope) {
         if (!form.assignmentFlow) nextErrors.assignmentFlow = "Please select a flow.";
-        if (availableWorkstations.length > 0 && !form.workstationCode) {
+        if (forceWorkstationScope && !form.workstationCode) {
+          nextErrors.workstationCode = "Please select a workstation.";
+        } else if (availableWorkstations.length > 0 && !form.workstationCode) {
           nextErrors.workstationCode = "Please select a workstation.";
         }
-        if (sideApplicable && !form.assignmentSide) {
+        if (forceWorkstationScope && form.assignmentFlow && availableWorkstations.length === 0) {
+          nextErrors.assignmentFlow = "This asset type requires a workstation-enabled flow.";
+        }
+        if ((isAdapterAsset || sideApplicable) && !form.assignmentSide) {
           nextErrors.assignmentSide = "Please select a side.";
         }
         if (positionApplicable && !form.assignmentPosition) {
           nextErrors.assignmentPosition = "Please select a position.";
+        }
+        if (isSimAsset && !form.relatedAssetId) {
+          nextErrors.relatedAssetId = "Please select the related phone.";
+        }
+        if (workstationTypeConflict) {
+          nextErrors.workstationCode = workstationTypeConflict;
         }
       } else {
         if (!form.generalLocation) nextErrors.generalLocation = "Please select a general location.";
@@ -302,9 +418,16 @@ export function AssetForm({
         const payload = {
           assetCode: form.assetCode.trim(),
           assetTypeId: form.assetTypeId,
+          relatedAssetId: form.relatedAssetId || null,
           brand: form.brand.trim(),
           model: form.model.trim(),
           serialNumber: form.serialNumber.trim(),
+          mobileNumber: form.mobileNumber.trim() || null,
+          networkProvider: form.networkProvider.trim() || null,
+          simType: form.simType.trim() || null,
+          adapterType: form.adapterType.trim() || null,
+          otherAdapterType:
+            form.adapterType === "Other" ? form.otherAdapterType.trim() || null : null,
           purchaseDate: form.purchaseDate ? new Date(form.purchaseDate).toISOString() : null,
           warrantyExpiryDate: form.warrantyExpiryDate
             ? new Date(form.warrantyExpiryDate).toISOString()
@@ -436,6 +559,40 @@ export function AssetForm({
             />
             {fieldErrors.model ? <span className="text-xs text-rose-700">{fieldErrors.model}</span> : null}
           </label>
+
+          {isAdapterAsset ? (
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium">Adapter Type</span>
+              <select
+                value={form.adapterType}
+                onChange={(e) => {
+                  updateField("adapterType", e.target.value);
+                  if (e.target.value !== "Other") {
+                    updateField("otherAdapterType", "");
+                  }
+                }}
+                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              >
+                <option value="">Select adapter type</option>
+                {adapterTypeOptions.map((adapterType) => (
+                  <option key={adapterType} value={adapterType}>
+                    {adapterType}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          {isAdapterAsset && form.adapterType === "Other" ? (
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium">Other Adapter Type</span>
+              <input
+                value={form.otherAdapterType}
+                onChange={(e) => updateField("otherAdapterType", e.target.value)}
+                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              />
+            </label>
+          ) : null}
         </div>
       </section>
 
@@ -520,6 +677,15 @@ export function AssetForm({
                   AC units are managed as shared location-based assets and are not assigned to workstations.
                 </p>
               </div>
+            ) : forceWorkstationScope ? (
+              <div className="mt-3 rounded-[1.4rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-4">
+                <p className="text-sm font-semibold text-[var(--nav)]">Workstation Device</p>
+                <p className="mt-1 text-sm text-[var(--muted)]">
+                  {isSimAsset
+                    ? "SIM cards are linked through Flow, Workstation, and the related Phone."
+                    : `${selectedAssetTypeName} assets are assigned directly to a workstation when active.`}
+                </p>
+              </div>
             ) : (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 {["Workstation Device", "Other / Non-Workstation Device"].map((scope) => (
@@ -551,7 +717,7 @@ export function AssetForm({
               <div className="mt-5">
                 <p className="text-sm font-medium text-[var(--text)]">Flow</p>
                 <div className="mt-3 flex flex-wrap gap-3">
-                  {["Ground", "1st Flow", "2nd Flow", "3rd Flow"].map((flow) => (
+                  {flowOptions.map((flow) => (
                     <button
                       key={flow}
                       type="button"
@@ -575,18 +741,18 @@ export function AssetForm({
                     <div>
                       <p className="text-sm font-medium text-[var(--text)]">Workstation</p>
                       <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {availableWorkstations.map((code) => (
+                        {availableWorkstations.map((workstation) => (
                           <button
-                            key={code}
+                            key={workstation.id}
                             type="button"
-                            onClick={() => updateField("workstationCode", code)}
+                            onClick={() => updateField("workstationCode", workstation.code)}
                             className={`rounded-[1.2rem] border px-4 py-3 text-sm font-semibold transition ${
-                              form.workstationCode === code
+                              form.workstationCode === workstation.code
                                 ? "border-[var(--nav)] bg-[var(--panel-strong)] text-[var(--nav)] shadow-sm"
                                 : "border-[var(--border)] bg-white text-[var(--text)] hover:bg-[var(--panel-strong)]"
                             }`}
                           >
-                            {code}
+                            {workstation.code}
                           </button>
                         ))}
                       </div>
@@ -594,7 +760,9 @@ export function AssetForm({
                     </div>
                   ) : (
                     <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
-                      Workstation selection is not required for this flow right now.
+                      {forceWorkstationScope
+                        ? "This asset type requires a workstation-enabled flow. Please select 1st Flow or 2nd Flow."
+                        : "Workstation selection is not required for this flow right now."}
                     </div>
                   )}
                 </div>
@@ -643,6 +811,76 @@ export function AssetForm({
                     ))}
                   </div>
                   {fieldErrors.assignmentPosition ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.assignmentPosition}</span> : null}
+                </div>
+              ) : null}
+
+              {isSimAsset && form.workstationCode ? (
+                <div className="mt-5 rounded-[1.4rem] border border-[var(--border)] bg-white/75 p-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="grid gap-2 text-sm">
+                      <span className="font-medium">Related Phone</span>
+                      <select
+                        value={form.relatedAssetId}
+                        onChange={(e) => updateField("relatedAssetId", e.target.value)}
+                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                      >
+                        <option value="">Select phone</option>
+                        {relatedPhoneOptions.map((phone) => (
+                          <option key={phone.id} value={phone.id}>
+                            {phone.label}
+                          </option>
+                        ))}
+                      </select>
+                      {fieldErrors.relatedAssetId ? (
+                        <span className="text-xs text-rose-700">{fieldErrors.relatedAssetId}</span>
+                      ) : null}
+                    </label>
+
+                    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                      {relatedPhoneOptions.length > 0
+                        ? "Only active Phone assets assigned to this workstation are listed."
+                        : "No active Phone asset is currently assigned to this workstation."}
+                    </div>
+
+                    <label className="grid gap-2 text-sm">
+                      <span className="font-medium">Mobile Number</span>
+                      <input
+                        value={form.mobileNumber}
+                        onChange={(e) => updateField("mobileNumber", e.target.value)}
+                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                      />
+                    </label>
+                    <label className="grid gap-2 text-sm">
+                      <span className="font-medium">Network Provider</span>
+                      <select
+                        value={form.networkProvider}
+                        onChange={(e) => updateField("networkProvider", e.target.value)}
+                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                      >
+                        <option value="">Select network provider</option>
+                        {networkProviderOptions.map((provider) => (
+                          <option key={provider} value={provider}>
+                            {provider}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="grid gap-2 text-sm">
+                      <span className="font-medium">SIM Type</span>
+                      <select
+                        value={form.simType}
+                        onChange={(e) => updateField("simType", e.target.value)}
+                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                      >
+                        <option value="">Select SIM type</option>
+                        {simTypeOptions.map((simType) => (
+                          <option key={simType} value={simType}>
+                            {simType}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                 </div>
               ) : null}
             </>

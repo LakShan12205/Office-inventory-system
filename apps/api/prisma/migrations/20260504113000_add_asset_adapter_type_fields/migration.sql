@@ -1,0 +1,3 @@
+ALTER TABLE "Asset"
+ADD COLUMN IF NOT EXISTS "adapterType" TEXT,
+ADD COLUMN IF NOT EXISTS "otherAdapterType" TEXT;

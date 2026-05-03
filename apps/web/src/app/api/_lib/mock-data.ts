@@ -49,9 +49,14 @@ type AssetRecord = {
   id: string;
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  packageType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   status: AssetStatus;
@@ -148,9 +153,14 @@ type MockDb = {
 type CreateAssetInput = {
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  packageType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   status: AssetStatus;
@@ -233,7 +243,11 @@ function buildSeedData(): MockDb {
     { id: "type-mouse", code: "MOU", name: "Mouse", description: "Mouse", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-tablet", code: "TAB", name: "Tablet", description: "Tablet", trackIndividually: true, createdAt, updatedAt: createdAt },
     { id: "type-phone", code: "PHN", name: "Phone", description: "Phone", trackIndividually: true, createdAt, updatedAt: createdAt },
-    { id: "type-vga", code: "VGA", name: "VGA Cable", description: "VGA cable", trackIndividually: true, createdAt, updatedAt: createdAt }
+    { id: "type-vga", code: "VGA", name: "VGA Cable", description: "VGA cable", trackIndividually: true, createdAt, updatedAt: createdAt },
+    { id: "type-adapter", code: "ADP", name: "Adapter", description: "Adapter", trackIndividually: true, createdAt, updatedAt: createdAt },
+    { id: "type-sim", code: "SIM", name: "SIM", description: "SIM", trackIndividually: true, createdAt, updatedAt: createdAt },
+    { id: "type-chair", code: "CHR", name: "Chair", description: "Chair", trackIndividually: true, createdAt, updatedAt: createdAt },
+    { id: "type-table", code: "TBL", name: "Table", description: "Table", trackIndividually: true, createdAt, updatedAt: createdAt }
   ];
 
   const workstations: WorkstationRecord[] = Array.from({ length: 12 }, (_, index) => {

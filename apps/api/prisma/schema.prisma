@@ -133,10 +133,19 @@ model Asset {
   id                    String             @id @default(cuid())
   assetCode             String             @unique
   assetTypeId           String
+  relatedAssetId        String?
   assetType             AssetType          @relation(fields: [assetTypeId], references: [id])
+  relatedAsset          Asset?             @relation("AssetRelations", fields: [relatedAssetId], references: [id])
+  linkedAssets          Asset[]            @relation("AssetRelations")
   brand                 String
   model                 String
   serialNumber          String             @unique
+  mobileNumber          String?
+  networkProvider       String?
+  simType               String?
+  packageType           String?
+  adapterType           String?
+  otherAdapterType      String?
   specification         String?
   purchaseDate          DateTime?
   warrantyExpiryDate    DateTime?
@@ -159,6 +168,7 @@ model Asset {
 
   @@index([status])
   @@index([assetTypeId, status])
+  @@index([relatedAssetId])
 }
 
 model WorkstationAsset {

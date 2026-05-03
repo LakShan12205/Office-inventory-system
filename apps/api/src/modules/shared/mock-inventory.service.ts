@@ -43,9 +43,15 @@ type AssetRecord = {
   id: string;
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   status: AssetStatus;
@@ -108,10 +114,28 @@ type AlertRecord = {
   priority: AlertPriority;
 };
 
+const SIM_TYPE_OPTIONS = ["Physical SIM", "eSIM"] as const;
+const NETWORK_PROVIDER_OPTIONS = ["Mobitel", "Dialog", "Hutch", "Airtel"] as const;
+const ADAPTER_TYPE_OPTIONS = [
+  "Laptop Charger",
+  "Monitor Adapter",
+  "TV Adapter",
+  "Router Adapter",
+  "Switch Adapter",
+  "Phone Charger",
+  "Tablet Charger",
+  "CCTV Adapter",
+  "Other"
+] as const;
+
 const assetTypes: AssetTypeRecord[] = [
   { id: "type-monitor", code: "MON", name: "Monitor", description: "Office monitor" },
   { id: "type-tv", code: "TV", name: "TV", description: "Display television" },
   { id: "type-machine", code: "MACH", name: "Machine", description: "Workstation machine" },
+  { id: "type-adapter", code: "ADP", name: "Adapter", description: "Adapter" },
+  { id: "type-sim", code: "SIM", name: "SIM", description: "SIM" },
+  { id: "type-chair", code: "CHR", name: "Chair", description: "Chair" },
+  { id: "type-table", code: "TBL", name: "Table", description: "Table" },
   { id: "type-ups", code: "UPS", name: "UPS", description: "Power backup unit" },
   { id: "type-keyboard", code: "KEY", name: "Keyboard", description: "Keyboard" },
   { id: "type-mouse", code: "MOU", name: "Mouse", description: "Mouse" },
@@ -126,7 +150,7 @@ const workstations: WorkstationRecord[] = Array.from({ length: 12 }, (_, index) 
     id: `ws-${number}`,
     code: `WS-${String(number).padStart(2, "0")}`,
     name: `Workstation ${String(number).padStart(2, "0")}`,
-    location: number <= 4 ? "Operations Floor" : number <= 8 ? "Support Wing" : "Executive Bay",
+    location: number <= 6 ? "2nd Flow" : "1st Flow",
     status: number === 3 || number === 7 ? "NEEDS_ATTENTION" : "ACTIVE",
     notes: number === 7 ? "Original machine returned, replacement still pending removal." : null
   };
@@ -156,6 +180,119 @@ function getAssetTypeByName(name: string) {
 
 function getWorkstationByCode(code: string) {
   return workstations.find((workstation) => workstation.code === code)!;
+}
+
+function normalizeAssetTypeKey(value?: string | null) {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function getActiveAssignmentForAsset(assetId: string) {
+  return workstationAssignmentsFor(assetId, true)[0] ?? null;
+}
+
+function validateNewAssetTypeRules(args: {
+  assetId?: string;
+  assetTypeId: string;
+  status: AssetStatus;
+  currentLocation?: string | null;
+  relatedAssetId?: string | null;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
+  notes?: string | null;
+}) {
+  if (args.status !== "ACTIVE" && args.status !== "TEMPORARY_REPLACEMENT") {
+    return;
+  }
+
+  const assetType = assetTypes.find((item) => item.id === args.assetTypeId);
+  const typeKey = normalizeAssetTypeKey(assetType?.name);
+  const workstationCode = args.currentLocation?.trim() ?? "";
+  const assignment = workstationCode ? workstations.find((item) => item.code === workstationCode) : null;
+  const notes = args.notes ?? "";
+  const sideMatch = notes.match(/Side:\s*([^|]+)/i);
+  const side = sideMatch?.[1]?.trim() ?? null;
+
+  if (["adapter", "sim", "chair", "table"].includes(typeKey)) {
+    if (!assignment) {
+      throw createError(400, `${assetType?.name ?? "This asset"} must be assigned to a workstation when active.`);
+    }
+  }
+
+  if (typeKey === "adapter" && !["Left", "Right"].includes(side ?? "")) {
+    throw createError(400, "Adapter side must be exactly Left or Right.");
+  }
+
+  if (
+    typeKey === "adapter" &&
+    args.adapterType &&
+    !ADAPTER_TYPE_OPTIONS.includes(args.adapterType as (typeof ADAPTER_TYPE_OPTIONS)[number])
+  ) {
+    throw createError(
+      400,
+      "Adapter type must be Laptop Charger, Monitor Adapter, TV Adapter, Router Adapter, Switch Adapter, Phone Charger, Tablet Charger, CCTV Adapter, or Other."
+    );
+  }
+
+  if (typeKey === "sim") {
+    if (args.simType && !SIM_TYPE_OPTIONS.includes(args.simType as (typeof SIM_TYPE_OPTIONS)[number])) {
+      throw createError(400, "SIM type must be Physical SIM or eSIM.");
+    }
+
+    if (
+      args.networkProvider &&
+      !NETWORK_PROVIDER_OPTIONS.includes(
+        args.networkProvider as (typeof NETWORK_PROVIDER_OPTIONS)[number]
+      )
+    ) {
+      throw createError(400, "Network provider must be Mobitel, Dialog, Hutch, or Airtel.");
+    }
+
+    if (!args.relatedAssetId) {
+      throw createError(400, "SIM requires a related phone assignment.");
+    }
+
+    const relatedPhone = assets.find((item) => item.id === args.relatedAssetId);
+    if (!relatedPhone) {
+      throw createError(404, "Related phone was not found.");
+    }
+
+    if (normalizeAssetTypeKey(assetTypeMap(relatedPhone).name) !== "phone") {
+      throw createError(409, "SIM can only be linked to a phone asset.");
+    }
+
+    const relatedPhoneAssignment = getActiveAssignmentForAsset(relatedPhone.id);
+    if (!relatedPhoneAssignment || relatedPhoneAssignment.workstationId !== assignment?.id) {
+      throw createError(409, "Selected phone must be actively assigned to the selected workstation.");
+    }
+
+    const existingSim = assets.find((asset) => {
+      if (asset.id === args.assetId) return false;
+      if (normalizeAssetTypeKey(assetTypeMap(asset).name) !== "sim") return false;
+      if (asset.relatedAssetId !== args.relatedAssetId) return false;
+      return asset.status === "ACTIVE" || asset.status === "TEMPORARY_REPLACEMENT";
+    });
+
+    if (existingSim) {
+      throw createError(409, "This phone already has an active SIM assigned.");
+    }
+  }
+
+  if (typeKey === "chair" || typeKey === "table") {
+    const existingAsset = assets.find((asset) => {
+      if (asset.id === args.assetId) return false;
+      if (normalizeAssetTypeKey(assetTypeMap(asset).name) !== typeKey) return false;
+      if (!(asset.status === "ACTIVE" || asset.status === "TEMPORARY_REPLACEMENT")) return false;
+      const activeAssignment = getActiveAssignmentForAsset(asset.id);
+      return activeAssignment?.workstationId === assignment?.id;
+    });
+
+    if (existingAsset) {
+      throw createError(409, `${assignment?.code ?? "This workstation"} already has an active ${assetType?.name}.`);
+    }
+  }
 }
 
 function seedMockData() {
@@ -534,9 +671,19 @@ function workstationAssignmentsFor(assetId: string, onlyActive = false) {
 }
 
 function assetView(asset: AssetRecord) {
+  const relatedAsset = asset.relatedAssetId
+    ? assets.find((item) => item.id === asset.relatedAssetId) ?? null
+    : null;
+
   return {
     ...asset,
     assetType: assetTypeMap(asset),
+    relatedAsset: relatedAsset
+      ? {
+          ...relatedAsset,
+          assetType: assetTypeMap(relatedAsset)
+        }
+      : null,
     workstationAssignments: workstationAssignmentsFor(asset.id, true),
     repairs: repairs
       .filter((repair) => repair.assetId === asset.id)
@@ -707,9 +854,19 @@ export async function getAssetById(id: string) {
   const asset = assets.find((item) => item.id === id);
   if (!asset) throw createError(404, "Asset not found");
 
+  const relatedAsset = asset.relatedAssetId
+    ? assets.find((item) => item.id === asset.relatedAssetId) ?? null
+    : null;
+
   return {
     ...asset,
     assetType: assetTypeMap(asset),
+    relatedAsset: relatedAsset
+      ? {
+          ...relatedAsset,
+          assetType: assetTypeMap(relatedAsset)
+        }
+      : null,
     workstationAssignments: workstationAssignmentsFor(asset.id),
     repairs: repairs
       .filter((repair) => repair.assetId === asset.id)
@@ -1021,15 +1178,23 @@ export async function createWorkstationAssignment(
 export async function createAsset(input: {
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   status: AssetStatus;
   currentLocation?: string | null;
   notes?: string | null;
 }) {
+  validateNewAssetTypeRules(input);
+
   const asset: AssetRecord = {
     id: `asset-${assets.length + 1}`,
     ...input
@@ -1041,9 +1206,15 @@ export async function createAsset(input: {
 export async function updateAsset(id: string, input: {
   assetCode: string;
   assetTypeId: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   status: AssetStatus;
@@ -1052,6 +1223,12 @@ export async function updateAsset(id: string, input: {
 }) {
   const asset = assets.find((item) => item.id === id);
   if (!asset) throw createError(404, "Asset not found");
+
+  validateNewAssetTypeRules({
+    assetId: id,
+    ...input
+  });
+
   Object.assign(asset, input);
   return assetView(asset);
 }

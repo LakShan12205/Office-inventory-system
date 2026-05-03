@@ -82,6 +82,10 @@ type AssetsResponse = {
 const QUICK_TYPE_BUTTONS = [
   { label: "All", value: "" },
   { label: "AC", value: "AC" },
+  { label: "Adapter", value: "Adapter" },
+  { label: "SIM", value: "SIM" },
+  { label: "Chair", value: "Chair" },
+  { label: "Table", value: "Table" },
   { label: "Monitors", value: "Monitor" },
   { label: "Machines", value: "Machine" },
   { label: "UPS", value: "UPS" },
@@ -91,6 +95,10 @@ const QUICK_TYPE_BUTTONS = [
 const TYPE_OPTIONS = [
   { label: "All", value: "" },
   { label: "AC", value: "AC" },
+  { label: "Adapter", value: "Adapter" },
+  { label: "SIM", value: "SIM" },
+  { label: "Chair", value: "Chair" },
+  { label: "Table", value: "Table" },
   { label: "Monitor", value: "Monitor" },
   { label: "Machine", value: "Machine" },
   { label: "UPS", value: "UPS" },
@@ -205,6 +213,47 @@ function getAssetTypeIcon(type?: string | null) {
         <path d="M8 7.5v4a4 4 0 0 0 8 0v-3" />
         <path d="M6 5.5h4v2H6z" />
         <path d="M14 4.5h4v3h-4z" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("adapter")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <rect x="7" y="4.5" width="10" height="8" rx="2" />
+        <path d="M10 12.5v4" />
+        <path d="M14 12.5v4" />
+      </svg>
+    );
+  }
+
+  if (normalized === "sim") {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <path d="M8 4.5h6l3 3v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" />
+        <path d="M9 12h6" />
+        <path d="M9 15h6" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("chair")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <path d="M8 5.5h8v5H8z" />
+        <path d="M7 12.5h10v3H7z" />
+        <path d="M9 15.5v3" />
+        <path d="M15 15.5v3" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("table")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <rect x="4" y="6" width="16" height="4" rx="1.5" />
+        <path d="M7 10v8" />
+        <path d="M17 10v8" />
       </svg>
     );
   }

@@ -8,6 +8,7 @@ const CURRENT_WORKSTATION_ASSET_STATUSES = new Set(["ACTIVE", "TEMPORARY_REPLACE
 
 // ✅ FINAL FIXED (TV kept + Machine + UPS added)
 const SIDE_BASED_TYPES = new Set([
+  "adapter",
   "monitor",
   "machine",
   "keyboard",

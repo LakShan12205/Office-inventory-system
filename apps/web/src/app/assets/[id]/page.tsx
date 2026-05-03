@@ -85,6 +85,47 @@ function getAssetTypeIcon(type?: string | null) {
     );
   }
 
+  if (normalized.includes("adapter")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <rect x="7" y="4.5" width="10" height="8" rx="2" />
+        <path d="M10 12.5v4" />
+        <path d="M14 12.5v4" />
+      </svg>
+    );
+  }
+
+  if (normalized === "sim") {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <path d="M8 4.5h6l3 3v12a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z" />
+        <path d="M9 12h6" />
+        <path d="M9 15h6" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("chair")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <path d="M8 5.5h8v5H8z" />
+        <path d="M7 12.5h10v3H7z" />
+        <path d="M9 15.5v3" />
+        <path d="M15 15.5v3" />
+      </svg>
+    );
+  }
+
+  if (normalized.includes("table")) {
+    return (
+      <svg viewBox="0 0 24 24" className={iconClass}>
+        <rect x="4" y="6" width="16" height="4" rx="1.5" />
+        <path d="M7 10v8" />
+        <path d="M17 10v8" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" className={iconClass}>
       <path d="M4 8.5 12 5l8 3.5L12 12 4 8.5Z" />
@@ -270,13 +311,29 @@ export default async function AssetDetailPage({
                 value: formatDate(asset.purchaseDate)
               },
               { label: "Warranty Expiry Date", value: asset.warrantyExpiryDate ?? "Not recorded" },
-              {
-                label: "Asset Scope",
-                value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device")
-              },
-              { label: "General Location", value: asset.generalLocation ?? "Not recorded" },
-              { label: "Specific Location / Notes", value: asset.specificLocationNotes ?? "Not recorded" }
-            ].map((item) => (
+                {
+                  label: "Asset Scope",
+                  value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device")
+                },
+                { label: "General Location", value: asset.generalLocation ?? "Not recorded" },
+                { label: "Specific Location / Notes", value: asset.specificLocationNotes ?? "Not recorded" },
+                ...(asset.assetType.name === "Adapter"
+                  ? [
+                      { label: "Adapter Type", value: asset.adapterType ?? "Not recorded" },
+                      ...(asset.adapterType === "Other"
+                        ? [{ label: "Other Adapter Type", value: asset.otherAdapterType ?? "Not recorded" }]
+                        : [])
+                    ]
+                  : []),
+                ...(asset.assetType.name === "SIM"
+                  ? [
+                      { label: "Related Phone", value: asset.relatedAsset?.assetCode ?? "Not recorded" },
+                      { label: "Mobile Number", value: asset.mobileNumber ?? "Not recorded" },
+                      { label: "Network Provider", value: asset.networkProvider ?? "Not recorded" },
+                      { label: "SIM Type", value: asset.simType ?? "Not recorded" }
+                    ]
+                  : [])
+              ].map((item) => (
               <div
                 key={item.label}
                 className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4"

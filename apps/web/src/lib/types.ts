@@ -78,9 +78,15 @@ export type RepairRecord = {
 export type AssetRecord = {
   id: string;
   assetCode: string;
+  relatedAssetId?: string | null;
   brand: string;
   model: string;
   serialNumber: string;
+  mobileNumber?: string | null;
+  networkProvider?: string | null;
+  simType?: string | null;
+  adapterType?: string | null;
+  otherAdapterType?: string | null;
   specification?: string | null;
   purchaseDate?: string | null;
   warrantyExpiryDate?: string | null;
@@ -105,6 +111,15 @@ export type AssetRecord = {
     name: string;
     code: string;
   };
+  relatedAsset?: {
+    id: string;
+    assetCode: string;
+    assetType?: {
+      id?: string;
+      code?: string;
+      name?: string;
+    } | null;
+  } | null;
   workstationAssignments: Array<{
     id: string;
     assignmentType: string;
