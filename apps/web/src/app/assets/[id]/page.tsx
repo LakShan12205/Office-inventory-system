@@ -4,7 +4,7 @@ import { DataTable } from "@/components/ui/data-table";
 import { SectionCard } from "@/components/ui/section-card";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { getAsset } from "@/lib/api";
-import { AssetRecord } from "@/lib/types";
+import { AssetRecord, inferAssetRegistrationType } from "@/lib/types";
 
 function formatDate(value?: string | null) {
   if (!value) return "Not recorded";
@@ -215,6 +215,8 @@ export default async function AssetDetailPage({
   const invoiceDownloadName = ensurePdfFileName(asset.invoiceFileName);
   const isWorkstationAsset = asset.assetScope === "Workstation Device" || asset.workstationAssignments.some((assignment) => assignment.isActive);
   const activeAssignment = asset.workstationAssignments.find((assignment) => assignment.isActive) ?? asset.workstationAssignments[0];
+  const missingInformation = asset.missingInformation ?? [];
+  const registrationType = inferAssetRegistrationType(asset);
   const currentLocation =
     asset.currentLocationDisplay ??
     asset.displayLocation ??
@@ -248,10 +250,12 @@ export default async function AssetDetailPage({
                 {asset.assetCode}
               </h1>
               <p className="mt-2 text-sm text-[var(--muted)]">
-                {asset.brand} {asset.model}
+                {[asset.brand, asset.model].filter(Boolean).join(" ") || "Profile details still need to be completed"}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <StatusBadge value={asset.status} />
+                <StatusBadge value={registrationType} tone="info" />
+                <StatusBadge value={asset.dataCompleteness ?? "COMPLETE"} />
                 {asset.assetScope ? <StatusBadge value={asset.assetScope} tone="info" /> : null}
               </div>
             </div>
@@ -282,6 +286,14 @@ export default async function AssetDetailPage({
             { label: "Asset Code", value: asset.assetCode },
             { label: "Type", value: asset.assetType.name },
             { label: "Status", value: asset.status.replaceAll("_", " ") },
+            {
+              label: "Registration Type",
+              value: registrationType.replaceAll("_", " ")
+            },
+            {
+              label: "Profile Completion",
+              value: `${asset.profileCompletion ?? 0}%`
+            },
             { label: "Asset Scope", value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device") },
             { label: "Current Location", value: currentLocation }
           ].map((item) => (
@@ -304,13 +316,15 @@ export default async function AssetDetailPage({
             {[
               { label: "Type", value: asset.assetType.name },
               { label: "Status", value: <StatusBadge value={asset.status} /> },
-              { label: "Brand / Model", value: `${asset.brand} ${asset.model}` },
-              { label: "Serial number", value: asset.serialNumber },
+              { label: "Registration Type", value: <StatusBadge value={registrationType} tone="info" /> },
+              { label: "Data Completeness", value: <StatusBadge value={asset.dataCompleteness ?? "COMPLETE"} /> },
+              { label: "Brand / Model", value: [asset.brand, asset.model].filter(Boolean).join(" / ") || "Not recorded" },
+              { label: "Serial number", value: asset.serialNumber ?? "Not recorded" },
               {
                 label: "Purchase date",
                 value: formatDate(asset.purchaseDate)
               },
-              { label: "Warranty Expiry Date", value: asset.warrantyExpiryDate ?? "Not recorded" },
+              { label: "Warranty Expiry Date", value: formatDate(asset.warrantyExpiryDate) },
                 {
                   label: "Asset Scope",
                   value: asset.assetScope ?? (isWorkstationAsset ? "Workstation Device" : "Other / Non-Workstation Device")
@@ -393,6 +407,53 @@ export default async function AssetDetailPage({
           </div>
         </SectionCard>
       </div>
+
+      <SectionCard title="Missing Information">
+        <div className="grid gap-4 md:grid-cols-[1.15fr_0.85fr]">
+          <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+              Current profile completion
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-[var(--nav)]">
+              {asset.profileCompletion ?? 0}%
+            </p>
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-[var(--panel-strong)]">
+              <div
+                className="h-full rounded-full bg-[linear-gradient(90deg,var(--accent),var(--nav))]"
+                style={{ width: `${Math.max(0, Math.min(100, asset.profileCompletion ?? 0))}%` }}
+              />
+            </div>
+            <p className="mt-4 text-sm text-[var(--muted)]">
+              {missingInformation.length > 0
+                ? "Complete the missing fields below to improve asset profile quality."
+                : "This asset profile is fully documented."}
+            </p>
+          </div>
+
+          <div className="rounded-[1.35rem] border border-[var(--border)] bg-white/80 px-4 py-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
+              Missing fields
+            </p>
+            {missingInformation.length > 0 ? (
+              <ul className="mt-3 space-y-2 text-sm text-[var(--text)]">
+                {missingInformation.map((field) => (
+                  <li key={field}>- {field}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm text-[var(--muted)]">No missing information recorded.</p>
+            )}
+            <div className="mt-5">
+              <ActionButton
+                href={`/assets/${asset.id}/edit`}
+                label="Complete Asset Details"
+                icon={<PencilIcon />}
+                tone="dark"
+              />
+            </div>
+          </div>
+        </div>
+      </SectionCard>
 
       <SectionCard title="Documents / Invoice">
         {asset.invoiceFileUrl ? (

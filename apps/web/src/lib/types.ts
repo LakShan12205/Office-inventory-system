@@ -78,10 +78,14 @@ export type RepairRecord = {
 export type AssetRecord = {
   id: string;
   assetCode: string;
+  registrationType?: "NEW_PURCHASE" | "LEGACY_ASSET";
+  dataCompleteness?: "COMPLETE" | "PARTIALLY_COMPLETE" | "INCOMPLETE" | "NEEDS_VERIFICATION";
+  profileCompletion?: number;
+  missingInformation?: string[];
   relatedAssetId?: string | null;
-  brand: string;
-  model: string;
-  serialNumber: string;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
   mobileNumber?: string | null;
   networkProvider?: string | null;
   simType?: string | null;
@@ -141,6 +145,31 @@ export type AssetRecord = {
   alerts?: AlertRecord[];
 };
 
+export function inferAssetRegistrationType(
+  asset: Pick<
+    AssetRecord,
+    "registrationType" | "assetCode" | "brand" | "model" | "serialNumber" | "purchaseDate" | "warrantyExpiryDate"
+  >
+) {
+  if (asset.registrationType === "LEGACY_ASSET") {
+    return "LEGACY_ASSET" as const;
+  }
+
+  if (asset.registrationType === "NEW_PURCHASE") {
+    return "NEW_PURCHASE" as const;
+  }
+
+  const hasStrictNewPurchaseProfile =
+    Boolean(asset.assetCode?.trim()) &&
+    Boolean(asset.brand?.trim()) &&
+    Boolean(asset.model?.trim()) &&
+    Boolean(asset.serialNumber?.trim()) &&
+    Boolean(asset.purchaseDate) &&
+    Boolean(asset.warrantyExpiryDate);
+
+  return hasStrictNewPurchaseProfile ? "NEW_PURCHASE" : "LEGACY_ASSET";
+}
+
 export type WorkstationDetail = {
   id: string;
   code: string;
@@ -198,8 +227,15 @@ export type DashboardData = {
   stats: {
     totalWorkstations: number;
     totalAssets: number;
+    newAssets: number;
+    legacyAssets: number;
     machinesInRepair: number;
     activeTemporaryReplacements: number;
+    incompleteAssets: number;
+    needsVerificationAssets: number;
+    assetsMissingSerial: number;
+    assetsMissingInvoice: number;
+    averageProfileCompletion: number;
     returnedReplacements: number;
     overdueRepairs: number;
     followUpAlerts: number;

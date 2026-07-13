@@ -29,6 +29,18 @@ enum AssetScope {
   OTHER_NON_WORKSTATION_DEVICE
 }
 
+enum AssetRegistrationType {
+  NEW_PURCHASE
+  LEGACY_ASSET
+}
+
+enum AssetDataCompleteness {
+  COMPLETE
+  PARTIALLY_COMPLETE
+  INCOMPLETE
+  NEEDS_VERIFICATION
+}
+
 enum AssignmentType {
   PRIMARY
   TEMPORARY_REPLACEMENT
@@ -137,9 +149,11 @@ model Asset {
   assetType             AssetType          @relation(fields: [assetTypeId], references: [id])
   relatedAsset          Asset?             @relation("AssetRelations", fields: [relatedAssetId], references: [id])
   linkedAssets          Asset[]            @relation("AssetRelations")
-  brand                 String
-  model                 String
-  serialNumber          String             @unique
+  registrationType      AssetRegistrationType @default(NEW_PURCHASE)
+  dataCompleteness      AssetDataCompleteness @default(COMPLETE)
+  brand                 String?
+  model                 String?
+  serialNumber          String?            @unique
   mobileNumber          String?
   networkProvider       String?
   simType               String?
@@ -168,6 +182,8 @@ model Asset {
 
   @@index([status])
   @@index([assetTypeId, status])
+  @@index([registrationType])
+  @@index([dataCompleteness])
   @@index([relatedAssetId])
 }
 

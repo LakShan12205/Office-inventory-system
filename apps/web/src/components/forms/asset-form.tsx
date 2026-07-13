@@ -8,7 +8,7 @@ import {
   getPlacementPositionOptions,
   getPlacementSideOptions
 } from "@/lib/asset-mapping";
-import { AssetRecord, AssetType, WorkstationListItem } from "@/lib/types";
+import { AssetRecord, AssetType, WorkstationListItem, inferAssetRegistrationType } from "@/lib/types";
 
 const MAX_INVOICE_FILE_SIZE = 10 * 1024 * 1024;
 const simTypeOptions = ["Physical SIM", "eSIM"] as const;
@@ -23,6 +23,10 @@ const adapterTypeOptions = [
   "Tablet Charger",
   "CCTV Adapter",
   "Other"
+] as const;
+const registrationTypeOptions = [
+  { value: "NEW_PURCHASE", label: "New Purchase" },
+  { value: "LEGACY_ASSET", label: "Legacy Asset" }
 ] as const;
 
 const generalLocationOptions = [
@@ -69,6 +73,18 @@ export function AssetForm({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [selectedInvoiceFile, setSelectedInvoiceFile] = useState<File | null>(null);
+  const initialRegistrationType = initialAsset
+    ? inferAssetRegistrationType(initialAsset)
+    : "NEW_PURCHASE";
+  const [unknownFlags, setUnknownFlags] = useState(() => ({
+    serialNumberUnavailable: initialRegistrationType === "LEGACY_ASSET" && !initialAsset?.serialNumber,
+    purchaseDateUnknown: initialRegistrationType === "LEGACY_ASSET" && !initialAsset?.purchaseDate,
+    warrantyUnavailable: initialRegistrationType === "LEGACY_ASSET" && !initialAsset?.warrantyExpiryDate,
+    invoiceUnavailable:
+      initialRegistrationType === "LEGACY_ASSET" &&
+      !initialAsset?.invoiceFileName &&
+      !initialAsset?.invoiceFileUrl
+  }));
 
   const inventoryTypeOptions = [
     { label: "TV", id: assetTypes.find((type) => type.name === "TV")?.id ?? "" },
@@ -88,6 +104,7 @@ export function AssetForm({
   ].filter((option) => option.id);
 
   const [form, setForm] = useState(() => ({
+    registrationType: initialRegistrationType,
     assetCode: initialAsset?.assetCode ?? "",
     assetTypeId: initialAsset?.assetType.id ?? inventoryTypeOptions[0]?.id ?? assetTypes[0]?.id ?? "",
     relatedAssetId: initialAsset?.relatedAssetId ?? "",
@@ -116,6 +133,8 @@ export function AssetForm({
   }));
 
   const isActive = form.status === "ACTIVE";
+  const isLegacyAsset = form.registrationType === "LEGACY_ASSET";
+  const requiresStrictPurchaseValidation = !isLegacyAsset;
   const selectedAssetTypeName =
     assetTypes.find((type) => type.id === form.assetTypeId)?.name ?? null;
   const isAdapterAsset = selectedAssetTypeName === "Adapter";
@@ -204,6 +223,49 @@ export function AssetForm({
     sideApplicable ? form.assignmentSide || null : null,
     positionApplicable ? form.assignmentPosition || null : null
   ].filter(Boolean);
+  const resolvedLocationForDuplicateCheck = isActive
+    ? isWorkstationScope
+      ? form.workstationCode || form.assignmentFlow || "Office Floor"
+      : form.generalLocation || "Office Floor"
+    : "Main Store";
+  const possibleDuplicateAsset = useMemo(() => {
+    const brand = form.brand.trim().toLowerCase();
+    const model = form.model.trim().toLowerCase();
+    if (!brand || !model) {
+      return null;
+    }
+
+    return (
+      assets.find((asset) => {
+        if (asset.id === initialAsset?.id) return false;
+        if ((asset.brand ?? "").trim().toLowerCase() !== brand) return false;
+        if ((asset.model ?? "").trim().toLowerCase() !== model) return false;
+
+        const assetLocation =
+          asset.currentLocationDisplay ??
+          asset.displayLocation ??
+          asset.workstationCode ??
+          asset.generalLocation ??
+          "";
+
+        return assetLocation.trim().toLowerCase() === resolvedLocationForDuplicateCheck.trim().toLowerCase();
+      }) ?? null
+    );
+  }, [
+    assets,
+    form.brand,
+    form.model,
+    initialAsset?.id,
+    resolvedLocationForDuplicateCheck
+  ]);
+  const sectionClass = "rounded-[1.35rem] border border-[var(--border)] bg-white/60 p-4 lg:p-5";
+  const sectionHeaderClass = "mb-3 flex flex-col gap-1";
+  const fieldClass = "grid gap-1.5 text-sm";
+  const controlClass =
+    "min-h-11 rounded-xl border border-[var(--border)] bg-white px-3.5 py-2.5 text-sm outline-none transition focus:border-[var(--nav)] focus:ring-2 focus:ring-[var(--nav)]/10 disabled:bg-[var(--panel-strong)] disabled:text-[var(--muted)]";
+  const helperClass = "min-h-[1rem] text-xs leading-4 text-[var(--muted)]";
+  const errorClass = "min-h-[1rem] text-xs leading-4 text-rose-700";
+  const checkboxClass = "h-3.5 w-3.5 rounded border-[var(--border)]";
 
   function clearFieldError(name: string) {
     setFieldErrors((current) => {
@@ -216,7 +278,58 @@ export function AssetForm({
 
   function updateField(name: string, value: string) {
     clearFieldError(name);
+    if (name === "registrationType" && value === "NEW_PURCHASE") {
+      setUnknownFlags({
+        serialNumberUnavailable: false,
+        purchaseDateUnknown: false,
+        warrantyUnavailable: false,
+        invoiceUnavailable: false
+      });
+    }
+    if (name === "serialNumber" && value.trim()) {
+      setUnknownFlags((current) => ({ ...current, serialNumberUnavailable: false }));
+    }
+    if (name === "purchaseDate" && value.trim()) {
+      setUnknownFlags((current) => ({ ...current, purchaseDateUnknown: false }));
+    }
+    if (name === "warrantyExpiryDate" && value.trim()) {
+      setUnknownFlags((current) => ({ ...current, warrantyUnavailable: false }));
+    }
     setForm((current) => ({ ...current, [name]: value }));
+  }
+
+  function toggleUnknownFlag(
+    key: keyof typeof unknownFlags,
+    fieldName?: keyof typeof form
+  ) {
+    setUnknownFlags((current) => {
+      const nextValue = !current[key];
+
+      if (fieldName) {
+        clearFieldError(String(fieldName));
+        setForm((formCurrent) => ({
+          ...formCurrent,
+          [fieldName]: nextValue ? "" : formCurrent[fieldName]
+        }));
+      }
+
+      if (key === "invoiceUnavailable" && nextValue) {
+        clearFieldError("invoiceFileName");
+        setSelectedInvoiceFile(null);
+        setForm((formCurrent) => ({
+          ...formCurrent,
+          invoiceFileName: "",
+          invoiceFileUrl: "",
+          invoiceFileType: "",
+          invoiceFileSize: ""
+        }));
+      }
+
+      return {
+        ...current,
+        [key]: nextValue
+      };
+    });
   }
 
   function updateAssetType(assetTypeId: string) {
@@ -339,6 +452,7 @@ export function AssetForm({
 
     setError(null);
     clearFieldError("invoiceFileName");
+    setUnknownFlags((current) => ({ ...current, invoiceUnavailable: false }));
     setSelectedInvoiceFile(file);
     setForm((current) => ({
       ...current,
@@ -354,12 +468,17 @@ export function AssetForm({
 
     if (!form.assetTypeId) nextErrors.assetTypeId = "Please select an inventory type.";
     if (!form.assetCode.trim()) nextErrors.assetCode = "Inventory code is required.";
-    if (!form.serialNumber.trim()) nextErrors.serialNumber = "Serial number is required.";
-    if (!form.brand.trim()) nextErrors.brand = "Brand is required.";
-    if (!form.model.trim()) nextErrors.model = "Model is required.";
-    if (!form.purchaseDate) nextErrors.purchaseDate = "Purchase date is required.";
-    if (!form.warrantyExpiryDate) nextErrors.warrantyExpiryDate = "Warranty expiry date is required.";
     if (!form.status) nextErrors.status = "Please select a status.";
+    if (requiresStrictPurchaseValidation) {
+      if (!form.brand.trim()) nextErrors.brand = "Brand is required.";
+      if (!form.model.trim()) nextErrors.model = "Model is required.";
+      if (!form.serialNumber.trim()) nextErrors.serialNumber = "Serial number is required.";
+      if (!form.purchaseDate) nextErrors.purchaseDate = "Purchase date is required.";
+      if (!form.warrantyExpiryDate) nextErrors.warrantyExpiryDate = "Warranty expiry date is required.";
+    } else if (!form.brand.trim() && !form.model.trim()) {
+      nextErrors.brand = "Enter at least a brand or a model for legacy assets.";
+      nextErrors.model = "Enter at least a model or a brand for legacy assets.";
+    }
 
     if (isActive) {
       if (!isAcAsset && !forceWorkstationScope && !form.assetScope) {
@@ -407,6 +526,16 @@ export function AssetForm({
       return;
     }
 
+    if (possibleDuplicateAsset) {
+      const shouldContinue = window.confirm(
+        `Possible duplicate asset detected.\n\nExisting asset: ${possibleDuplicateAsset.assetCode}\nLocation: ${resolvedLocationForDuplicateCheck}\n\nDo you want to continue?`
+      );
+
+      if (!shouldContinue) {
+        return;
+      }
+    }
+
     startTransition(async () => {
       try {
         const resolvedLocation = isActive
@@ -416,12 +545,13 @@ export function AssetForm({
           : "Main Store";
 
         const payload = {
+          registrationType: form.registrationType,
           assetCode: form.assetCode.trim(),
           assetTypeId: form.assetTypeId,
           relatedAssetId: form.relatedAssetId || null,
-          brand: form.brand.trim(),
-          model: form.model.trim(),
-          serialNumber: form.serialNumber.trim(),
+          brand: form.brand.trim() || null,
+          model: form.model.trim() || null,
+          serialNumber: form.serialNumber.trim() || null,
           mobileNumber: form.mobileNumber.trim() || null,
           networkProvider: form.networkProvider.trim() || null,
           simType: form.simType.trim() || null,
@@ -439,10 +569,18 @@ export function AssetForm({
               : "OTHER_NON_WORKSTATION_DEVICE"
             : null,
           currentLocation: resolvedLocation,
-          invoiceFileName: form.invoiceFileName || null,
-          invoiceFileUrl: form.invoiceFileUrl || null,
-          invoiceFileType: form.invoiceFileType || null,
-          invoiceFileSize: form.invoiceFileSize ? Number(form.invoiceFileSize) : null,
+          invoiceFileName:
+            unknownFlags.invoiceUnavailable && !selectedInvoiceFile ? null : form.invoiceFileName || null,
+          invoiceFileUrl:
+            unknownFlags.invoiceUnavailable && !selectedInvoiceFile ? null : form.invoiceFileUrl || null,
+          invoiceFileType:
+            unknownFlags.invoiceUnavailable && !selectedInvoiceFile ? null : form.invoiceFileType || null,
+          invoiceFileSize:
+            unknownFlags.invoiceUnavailable && !selectedInvoiceFile
+              ? null
+              : form.invoiceFileSize
+                ? Number(form.invoiceFileSize)
+                : null,
           assignment:
             isActive
               ? isWorkstationScope
@@ -497,19 +635,42 @@ export function AssetForm({
   return (
     <form
       onSubmit={onSubmit}
-      className="grid gap-5 rounded-[1.75rem] border border-[var(--border)] bg-[var(--panel)] p-5 shadow-sm"
+      className="grid gap-4 rounded-[1.5rem] border border-[var(--border)] bg-[var(--panel)] p-4 shadow-sm lg:p-5"
     >
-      <section className="rounded-[1.5rem] border border-[var(--border)] bg-white/60 p-4">
-        <div className="mb-4">
+      <section className={sectionClass}>
+        <div className={sectionHeaderClass}>
           <h2 className="text-base font-semibold text-[var(--nav)]">Basic Information</h2>
+          <p className="text-sm leading-5 text-[var(--muted)]">
+            {isLegacyAsset
+              ? "Legacy assets may be registered with unavailable historical details."
+              : "New purchases require complete purchasing and identification details."}
+          </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Inventory Type</span>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <label className={fieldClass}>
+            <span className="font-medium">Asset Registration Type *</span>
+            <select
+              value={form.registrationType}
+              onChange={(e) => updateField("registrationType", e.target.value)}
+              className={controlClass}
+            >
+              {registrationTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <span className={helperClass}>
+              {isLegacyAsset ? "Unavailable history can be left blank." : "Strict details are required."}
+            </span>
+          </label>
+
+          <label className={fieldClass}>
+            <span className="font-medium">Inventory Type *</span>
             <select
               value={form.assetTypeId}
               onChange={(e) => updateAssetType(e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              className={controlClass}
             >
               {inventoryTypeOptions.map((assetType) => (
                 <option key={assetType.id} value={assetType.id}>
@@ -517,51 +678,80 @@ export function AssetForm({
                 </option>
               ))}
             </select>
-            {fieldErrors.assetTypeId ? <span className="text-xs text-rose-700">{fieldErrors.assetTypeId}</span> : null}
+            <span className={fieldErrors.assetTypeId ? errorClass : helperClass}>
+              {fieldErrors.assetTypeId ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Inventory Code</span>
+          <label className={fieldClass}>
+            <span className="font-medium">Inventory Code *</span>
             <input
               value={form.assetCode}
               onChange={(e) => updateField("assetCode", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              className={controlClass}
             />
-            {fieldErrors.assetCode ? <span className="text-xs text-rose-700">{fieldErrors.assetCode}</span> : null}
+            <span className={fieldErrors.assetCode ? errorClass : helperClass}>
+              {fieldErrors.assetCode ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Serial Number</span>
+          <label className={fieldClass}>
+            <span className="font-medium">
+              Serial Number{isLegacyAsset ? " (Optional)" : " *"}
+            </span>
             <input
               value={form.serialNumber}
               onChange={(e) => updateField("serialNumber", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              disabled={unknownFlags.serialNumberUnavailable}
+              className={controlClass}
             />
-            {fieldErrors.serialNumber ? <span className="text-xs text-rose-700">{fieldErrors.serialNumber}</span> : null}
+            {isLegacyAsset ? (
+              <label className="inline-flex items-center gap-2 text-xs leading-4 text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={unknownFlags.serialNumberUnavailable}
+                  onChange={() => toggleUnknownFlag("serialNumberUnavailable", "serialNumber")}
+                  className={checkboxClass}
+                />
+                Serial Number unavailable
+              </label>
+            ) : null}
+            <span className={fieldErrors.serialNumber ? errorClass : helperClass}>
+              {fieldErrors.serialNumber ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Brand</span>
+          <label className={fieldClass}>
+            <span className="font-medium">Brand{isLegacyAsset ? "" : " *"}</span>
             <input
               value={form.brand}
               onChange={(e) => updateField("brand", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              className={controlClass}
             />
-            {fieldErrors.brand ? <span className="text-xs text-rose-700">{fieldErrors.brand}</span> : null}
+            {isLegacyAsset ? (
+              <span className={helperClass}>
+                At least one of Brand or Model is required.
+              </span>
+            ) : null}
+            <span className={fieldErrors.brand ? errorClass : helperClass}>
+              {fieldErrors.brand ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Model</span>
+          <label className={fieldClass}>
+            <span className="font-medium">Model{isLegacyAsset ? "" : " *"}</span>
             <input
               value={form.model}
               onChange={(e) => updateField("model", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              className={controlClass}
             />
-            {fieldErrors.model ? <span className="text-xs text-rose-700">{fieldErrors.model}</span> : null}
+            <span className={fieldErrors.model ? errorClass : helperClass}>
+              {fieldErrors.model ?? ""}
+            </span>
           </label>
 
           {isAdapterAsset ? (
-            <label className="grid gap-2 text-sm">
+            <label className={fieldClass}>
               <span className="font-medium">Adapter Type</span>
               <select
                 value={form.adapterType}
@@ -571,7 +761,7 @@ export function AssetForm({
                     updateField("otherAdapterType", "");
                   }
                 }}
-                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                className={controlClass}
               >
                 <option value="">Select adapter type</option>
                 {adapterTypeOptions.map((adapterType) => (
@@ -584,86 +774,134 @@ export function AssetForm({
           ) : null}
 
           {isAdapterAsset && form.adapterType === "Other" ? (
-            <label className="grid gap-2 text-sm">
+            <label className={fieldClass}>
               <span className="font-medium">Other Adapter Type</span>
               <input
                 value={form.otherAdapterType}
                 onChange={(e) => updateField("otherAdapterType", e.target.value)}
-                className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                className={controlClass}
               />
             </label>
           ) : null}
         </div>
       </section>
 
-      <section className="rounded-[1.5rem] border border-[var(--border)] bg-white/60 p-4">
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-[var(--nav)]">Purchase Information</h2>
+      <section className={sectionClass}>
+        <div className={sectionHeaderClass}>
+          <h2 className="text-base font-semibold text-[var(--nav)]">Purchase and Status</h2>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Purchase Date</span>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <label className={fieldClass}>
+            <span className="font-medium">
+              Purchase Date{isLegacyAsset ? " (Optional)" : " *"}
+            </span>
             <input
               type="date"
               value={form.purchaseDate}
               onChange={(e) => updateField("purchaseDate", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              disabled={unknownFlags.purchaseDateUnknown}
+              className={controlClass}
             />
-            {fieldErrors.purchaseDate ? <span className="text-xs text-rose-700">{fieldErrors.purchaseDate}</span> : null}
+            {isLegacyAsset ? (
+              <label className="inline-flex items-center gap-2 text-xs leading-4 text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={unknownFlags.purchaseDateUnknown}
+                  onChange={() => toggleUnknownFlag("purchaseDateUnknown", "purchaseDate")}
+                  className={checkboxClass}
+                />
+                Purchase Date unknown
+              </label>
+            ) : null}
+            <span className={fieldErrors.purchaseDate ? errorClass : helperClass}>
+              {fieldErrors.purchaseDate ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Warranty Expiry Date</span>
+          <label className={fieldClass}>
+            <span className="font-medium">
+              Warranty Expiry Date{isLegacyAsset ? " (Optional)" : " *"}
+            </span>
             <input
               type="date"
               value={form.warrantyExpiryDate}
               onChange={(e) => updateField("warrantyExpiryDate", e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              disabled={unknownFlags.warrantyUnavailable}
+              className={controlClass}
             />
-            {fieldErrors.warrantyExpiryDate ? <span className="text-xs text-rose-700">{fieldErrors.warrantyExpiryDate}</span> : null}
+            {isLegacyAsset ? (
+              <label className="inline-flex items-center gap-2 text-xs leading-4 text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={unknownFlags.warrantyUnavailable}
+                  onChange={() => toggleUnknownFlag("warrantyUnavailable", "warrantyExpiryDate")}
+                  className={checkboxClass}
+                />
+                Warranty unavailable
+              </label>
+            ) : null}
+            <span className={fieldErrors.warrantyExpiryDate ? errorClass : helperClass}>
+              {fieldErrors.warrantyExpiryDate ?? ""}
+            </span>
           </label>
-        </div>
-      </section>
 
-      <section className="rounded-[1.5rem] border border-[var(--border)] bg-white/60 p-4">
-        <div className="mb-4">
-          <h2 className="text-base font-semibold text-[var(--nav)]">Status and File</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Status</span>
+          <label className={fieldClass}>
+            <span className="font-medium">Status *</span>
             <select
               value={form.status}
               onChange={(e) => updateStatus(e.target.value)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+              className={controlClass}
             >
               <option value="ACTIVE">Active</option>
               <option value="IN_STORE">In Store</option>
             </select>
-            {fieldErrors.status ? <span className="text-xs text-rose-700">{fieldErrors.status}</span> : null}
+            <span className={fieldErrors.status ? errorClass : helperClass}>
+              {fieldErrors.status ?? ""}
+            </span>
           </label>
 
-          <label className="grid gap-2 text-sm">
-            <span className="font-medium">Attached Invoice</span>
+          <label className={`${fieldClass} sm:col-span-2 xl:col-span-3`}>
+            <span className="font-medium">Attached Invoice (Optional)</span>
             <input
               type="file"
               accept="application/pdf,.pdf"
               onChange={(e) => onInvoiceChange(e.target.files?.[0] ?? null)}
-              className="rounded-2xl border border-[var(--border)] bg-white px-4 py-[0.8rem] text-sm"
+              disabled={unknownFlags.invoiceUnavailable}
+              className={`${controlClass} file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--panel-strong)] file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-[var(--nav)]`}
             />
-            <span className="text-xs text-[var(--muted)]">
+            {isLegacyAsset ? (
+              <label className="inline-flex items-center gap-2 text-xs leading-4 text-[var(--muted)]">
+                <input
+                  type="checkbox"
+                  checked={unknownFlags.invoiceUnavailable}
+                  onChange={() => toggleUnknownFlag("invoiceUnavailable")}
+                  className={checkboxClass}
+                />
+                Invoice unavailable
+              </label>
+            ) : null}
+            <span className={helperClass}>
               PDF only, max 10MB{form.invoiceFileName ? ` - selected: ${form.invoiceFileName}` : ""}
             </span>
-            {fieldErrors.invoiceFileName ? <span className="text-xs text-rose-700">{fieldErrors.invoiceFileName}</span> : null}
+            <span className={fieldErrors.invoiceFileName ? errorClass : helperClass}>
+              {fieldErrors.invoiceFileName ?? ""}
+            </span>
           </label>
         </div>
       </section>
 
+      {possibleDuplicateAsset ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Possible duplicate asset detected: <span className="font-semibold">{possibleDuplicateAsset.assetCode}</span>
+          {" "}has the same brand, model, and location. You will be asked to confirm before saving.
+        </div>
+      ) : null}
+
       {isActive ? (
-        <section className="rounded-[1.5rem] border border-[var(--border)] bg-white/60 p-4">
-          <div className="mb-4">
+        <section className={sectionClass}>
+          <div className={sectionHeaderClass}>
             <h2 className="text-base font-semibold text-[var(--nav)]">Assignment Location</h2>
-            <p className="mt-1 text-sm text-[var(--muted)]">
+            <p className="text-sm leading-5 text-[var(--muted)]">
               Select where this inventory item is currently assigned.
             </p>
           </div>
@@ -671,36 +909,36 @@ export function AssetForm({
           <div>
             <p className="text-sm font-medium text-[var(--text)]">Asset Scope</p>
             {isAcAsset ? (
-              <div className="mt-3 rounded-[1.4rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-4">
+              <div className="mt-2 rounded-[1rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-3">
                 <p className="text-sm font-semibold text-[var(--nav)]">Other / Non-Workstation Device</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">
+                <p className="mt-1 text-sm leading-5 text-[var(--muted)]">
                   AC units are managed as shared location-based assets and are not assigned to workstations.
                 </p>
               </div>
             ) : forceWorkstationScope ? (
-              <div className="mt-3 rounded-[1.4rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-4">
+              <div className="mt-2 rounded-[1rem] border border-[var(--nav)] bg-[var(--panel-strong)] px-4 py-3">
                 <p className="text-sm font-semibold text-[var(--nav)]">Workstation Device</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">
+                <p className="mt-1 text-sm leading-5 text-[var(--muted)]">
                   {isSimAsset
                     ? "SIM cards are linked through Flow, Workstation, and the related Phone."
                     : `${selectedAssetTypeName} assets are assigned directly to a workstation when active.`}
                 </p>
               </div>
             ) : (
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="mt-2 grid gap-3 md:grid-cols-2">
                 {["Workstation Device", "Other / Non-Workstation Device"].map((scope) => (
                   <button
                     key={scope}
                     type="button"
                     onClick={() => updateAssetScope(scope)}
-                    className={`rounded-[1.4rem] border px-4 py-4 text-left transition ${
+                    className={`rounded-[1rem] border px-4 py-3 text-left transition ${
                       form.assetScope === scope
                         ? "border-[var(--nav)] bg-[var(--panel-strong)]"
                         : "border-[var(--border)] bg-white hover:bg-[var(--panel-strong)]"
                     }`}
                   >
                     <p className="text-sm font-semibold text-[var(--nav)]">{scope}</p>
-                    <p className="mt-1 text-sm text-[var(--muted)]">
+                    <p className="mt-1 text-sm leading-5 text-[var(--muted)]">
                       {scope === "Workstation Device"
                         ? "Assign this item by flow, workstation, and placement."
                         : "Assign this item to a general office location."}
@@ -714,9 +952,9 @@ export function AssetForm({
 
           {isWorkstationScope ? (
             <>
-              <div className="mt-5">
+              <div className="mt-4">
                 <p className="text-sm font-medium text-[var(--text)]">Flow</p>
-                <div className="mt-3 flex flex-wrap gap-3">
+                <div className="mt-2 flex flex-wrap gap-2">
                   {flowOptions.map((flow) => (
                     <button
                       key={flow}
@@ -736,17 +974,17 @@ export function AssetForm({
               </div>
 
               {form.assignmentFlow ? (
-                <div className="mt-4">
+                <div className="mt-3">
                   {availableWorkstations.length > 0 ? (
                     <div>
                       <p className="text-sm font-medium text-[var(--text)]">Workstation</p>
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                         {availableWorkstations.map((workstation) => (
                           <button
                             key={workstation.id}
                             type="button"
                             onClick={() => updateField("workstationCode", workstation.code)}
-                            className={`rounded-[1.2rem] border px-4 py-3 text-sm font-semibold transition ${
+                            className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition ${
                               form.workstationCode === workstation.code
                                 ? "border-[var(--nav)] bg-[var(--panel-strong)] text-[var(--nav)] shadow-sm"
                                 : "border-[var(--border)] bg-white text-[var(--text)] hover:bg-[var(--panel-strong)]"
@@ -759,7 +997,7 @@ export function AssetForm({
                       {fieldErrors.workstationCode ? <span className="mt-2 block text-xs text-rose-700">{fieldErrors.workstationCode}</span> : null}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                    <div className="rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-3 text-sm leading-5 text-[var(--muted)]">
                       {forceWorkstationScope
                         ? "This asset type requires a workstation-enabled flow. Please select 1st Flow or 2nd Flow."
                         : "Workstation selection is not required for this flow right now."}
@@ -815,14 +1053,14 @@ export function AssetForm({
               ) : null}
 
               {isSimAsset && form.workstationCode ? (
-                <div className="mt-5 rounded-[1.4rem] border border-[var(--border)] bg-white/75 p-4">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="grid gap-2 text-sm">
+                <div className="mt-4 rounded-[1rem] border border-[var(--border)] bg-white/75 p-4">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className={fieldClass}>
                       <span className="font-medium">Related Phone</span>
                       <select
                         value={form.relatedAssetId}
                         onChange={(e) => updateField("relatedAssetId", e.target.value)}
-                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                        className={controlClass}
                       >
                         <option value="">Select phone</option>
                         {relatedPhoneOptions.map((phone) => (
@@ -836,26 +1074,26 @@ export function AssetForm({
                       ) : null}
                     </label>
 
-                    <div className="rounded-2xl border border-dashed border-[var(--border)] bg-white px-4 py-4 text-sm text-[var(--muted)]">
+                    <div className="rounded-xl border border-dashed border-[var(--border)] bg-white px-4 py-3 text-sm leading-5 text-[var(--muted)]">
                       {relatedPhoneOptions.length > 0
                         ? "Only active Phone assets assigned to this workstation are listed."
                         : "No active Phone asset is currently assigned to this workstation."}
                     </div>
 
-                    <label className="grid gap-2 text-sm">
+                    <label className={fieldClass}>
                       <span className="font-medium">Mobile Number</span>
                       <input
                         value={form.mobileNumber}
                         onChange={(e) => updateField("mobileNumber", e.target.value)}
-                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                        className={controlClass}
                       />
                     </label>
-                    <label className="grid gap-2 text-sm">
+                    <label className={fieldClass}>
                       <span className="font-medium">Network Provider</span>
                       <select
                         value={form.networkProvider}
                         onChange={(e) => updateField("networkProvider", e.target.value)}
-                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                        className={controlClass}
                       >
                         <option value="">Select network provider</option>
                         {networkProviderOptions.map((provider) => (
@@ -865,12 +1103,12 @@ export function AssetForm({
                         ))}
                       </select>
                     </label>
-                    <label className="grid gap-2 text-sm">
+                    <label className={fieldClass}>
                       <span className="font-medium">SIM Type</span>
                       <select
                         value={form.simType}
                         onChange={(e) => updateField("simType", e.target.value)}
-                        className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                        className={controlClass}
                       >
                         <option value="">Select SIM type</option>
                         {simTypeOptions.map((simType) => (
@@ -885,21 +1123,21 @@ export function AssetForm({
               ) : null}
             </>
           ) : (
-            <div className="mt-5 rounded-[1.4rem] border border-[var(--border)] bg-white/75 p-4">
-              <div className="mb-4">
+            <div className="mt-4 rounded-[1rem] border border-[var(--border)] bg-white/75 p-4">
+              <div className="mb-3">
                 <p className="text-sm font-semibold text-[var(--nav)]">Other / Non-Workstation Device Location</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">
+                <p className="mt-1 text-sm leading-5 text-[var(--muted)]">
                   Use this for shared devices or assets placed outside workstation assignments.
                 </p>
               </div>
 
-              <div className={`grid gap-4 ${isAcAsset ? "" : "md:grid-cols-2"}`}>
-                <label className="grid gap-2 text-sm">
+              <div className={`grid gap-3 ${isAcAsset ? "" : "md:grid-cols-2"}`}>
+                <label className={fieldClass}>
                   <span className="font-medium">General Location</span>
                   <select
                     value={form.generalLocation}
                     onChange={(e) => updateField("generalLocation", e.target.value)}
-                    className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                    className={controlClass}
                   >
                     <option value="">Select general location</option>
                     {locationOptions.map((location) => (
@@ -912,13 +1150,13 @@ export function AssetForm({
                 </label>
 
                 {!isAcAsset ? (
-                  <label className="grid gap-2 text-sm">
+                  <label className={fieldClass}>
                     <span className="font-medium">Specific Location / Notes</span>
                     <input
                       value={form.specificLocationNotes}
                       onChange={(e) => updateField("specificLocationNotes", e.target.value)}
                       placeholder="Example: TV in Reception"
-                      className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+                      className={controlClass}
                     />
                   </label>
                 ) : null}
@@ -927,14 +1165,14 @@ export function AssetForm({
           )}
 
           {shouldShowAssignmentSummary ? (
-            <div className="mt-5 rounded-2xl border border-[var(--border)] bg-[var(--panel-strong)] px-4 py-3 text-sm text-[var(--muted)]">
+            <div className="mt-4 rounded-xl border border-[var(--border)] bg-[var(--panel-strong)] px-4 py-2.5 text-sm text-[var(--muted)]">
               <span className="font-medium text-[var(--text)]">Selected Location:</span>{" "}
               {assignmentSummaryParts.join(" / ")}
             </div>
           ) : null}
         </section>
       ) : (
-        <div className="rounded-[1.5rem] border border-dashed border-[var(--border)] bg-white/50 px-4 py-4 text-sm text-[var(--muted)]">
+        <div className="rounded-xl border border-dashed border-[var(--border)] bg-white/50 px-4 py-3 text-sm text-[var(--muted)]">
           This item will remain in store and is not assigned to a workstation.
         </div>
       )}
@@ -942,18 +1180,18 @@ export function AssetForm({
       {error ? <div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div> : null}
       {successMessage ? <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{successMessage}</div> : null}
 
-      <div className="flex flex-wrap justify-end gap-3">
+      <div className="flex flex-col-reverse gap-3 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
         <button
           type="button"
           onClick={() => router.push("/assets")}
-          className="rounded-2xl border border-[var(--border)] bg-white px-5 py-3 text-sm font-semibold text-[var(--nav)] transition hover:bg-[var(--panel-strong)]"
+          className="rounded-xl border border-[var(--border)] bg-white px-5 py-2.5 text-sm font-semibold text-[var(--nav)] transition hover:bg-[var(--panel-strong)]"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={isPending}
-          className="rounded-2xl bg-[var(--nav)] px-5 py-3 text-sm font-semibold text-white disabled:opacity-60"
+          className="rounded-xl bg-[var(--nav)] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
         >
           {isPending ? "Saving..." : initialAsset?.id ? "Update Inventory" : "Save Inventory"}
         </button>

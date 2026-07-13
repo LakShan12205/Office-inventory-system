@@ -18,6 +18,26 @@ const ADAPTER_TYPE_OPTIONS = [
   "CCTV Adapter",
   "Other"
 ] as const;
+const REGISTRATION_TYPE_OPTIONS = ["NEW_PURCHASE", "LEGACY_ASSET"] as const;
+const COMPLETENESS_FILTER_OPTIONS = [
+  "COMPLETE",
+  "PARTIALLY_COMPLETE",
+  "INCOMPLETE",
+  "NEEDS_VERIFICATION",
+  "MISSING_INFORMATION"
+] as const;
+const MISSING_FIELD_FILTER_OPTIONS = [
+  "SERIAL_NUMBER",
+  "BRAND",
+  "MODEL",
+  "PURCHASE_DATE",
+  "WARRANTY",
+  "INVOICE"
+] as const;
+
+type AssetRegistrationType = (typeof REGISTRATION_TYPE_OPTIONS)[number];
+type AssetDataCompleteness = Exclude<(typeof COMPLETENESS_FILTER_OPTIONS)[number], "MISSING_INFORMATION">;
+type MissingFieldFilter = (typeof MISSING_FIELD_FILTER_OPTIONS)[number];
 
 const currentWorkstationAssignmentWhere = {
   isActive: true,
@@ -167,6 +187,144 @@ function supportsLiveAssignment(status: string) {
 
 function normalizeAssetTypeKey(value?: string | null) {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function normalizeNullableString(value?: string | null) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function hasValue(value?: string | null) {
+  return Boolean(normalizeNullableString(value));
+}
+
+function meetsStrictNewPurchaseProfile(input: {
+  assetCode?: string | null;
+  assetTypeId?: string | null;
+  status?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  purchaseDate?: string | Date | null;
+  warrantyExpiryDate?: string | Date | null;
+}) {
+  return (
+    hasValue(input.assetCode) &&
+    hasValue(input.assetTypeId) &&
+    hasValue(input.status) &&
+    hasValue(input.brand) &&
+    hasValue(input.model) &&
+    hasValue(input.serialNumber) &&
+    Boolean(input.purchaseDate) &&
+    Boolean(input.warrantyExpiryDate)
+  );
+}
+
+function normalizeRegistrationType(input: {
+  registrationType?: string | null;
+  assetCode?: string | null;
+  assetTypeId?: string | null;
+  status?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  purchaseDate?: string | Date | null;
+  warrantyExpiryDate?: string | Date | null;
+}): AssetRegistrationType {
+  if (input.registrationType === "LEGACY_ASSET") {
+    return "LEGACY_ASSET";
+  }
+
+  if (input.registrationType === "NEW_PURCHASE") {
+    return "NEW_PURCHASE";
+  }
+
+  return meetsStrictNewPurchaseProfile(input) ? "NEW_PURCHASE" : "LEGACY_ASSET";
+}
+
+function getMissingInformation(input: {
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  purchaseDate?: string | Date | null;
+  warrantyExpiryDate?: string | Date | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+}) {
+  const missing: string[] = [];
+
+  if (!hasValue(input.brand)) missing.push("Brand");
+  if (!hasValue(input.model)) missing.push("Model");
+  if (!hasValue(input.serialNumber)) missing.push("Serial Number");
+  if (!input.purchaseDate) missing.push("Purchase Date");
+  if (!input.warrantyExpiryDate) missing.push("Warranty");
+  if (!hasValue(input.invoiceFileName) && !hasValue(input.invoiceFileUrl)) missing.push("Invoice");
+
+  return missing;
+}
+
+function getProfileCompletion(input: {
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  purchaseDate?: string | Date | null;
+  warrantyExpiryDate?: string | Date | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+}) {
+  const totalFields = 6;
+  const completedFields = [
+    hasValue(input.brand),
+    hasValue(input.model),
+    hasValue(input.serialNumber),
+    Boolean(input.purchaseDate),
+    Boolean(input.warrantyExpiryDate),
+    hasValue(input.invoiceFileName) || hasValue(input.invoiceFileUrl)
+  ].filter(Boolean).length;
+
+  return Math.round((completedFields / totalFields) * 100);
+}
+
+function determineDataCompleteness(input: {
+  registrationType?: string | null;
+  assetCode?: string | null;
+  assetTypeId?: string | null;
+  status?: string | null;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
+  purchaseDate?: string | Date | null;
+  warrantyExpiryDate?: string | Date | null;
+  invoiceFileName?: string | null;
+  invoiceFileUrl?: string | null;
+}) {
+  const registrationType = normalizeRegistrationType(input);
+  const missingInformation = getMissingInformation(input);
+  const hasMinimumCommonFields =
+    hasValue(input.assetCode) &&
+    hasValue(input.assetTypeId) &&
+    hasValue(input.status);
+  const hasLegacyIdentity = hasValue(input.brand) || hasValue(input.model);
+  const hasNewPurchaseMinimum = meetsStrictNewPurchaseProfile(input);
+
+  const minimumMet =
+    registrationType === "LEGACY_ASSET"
+      ? hasMinimumCommonFields && hasLegacyIdentity
+      : hasMinimumCommonFields && hasNewPurchaseMinimum;
+
+  if (!minimumMet) {
+    return "INCOMPLETE" as const;
+  }
+
+  if (missingInformation.length === 0) {
+    return "COMPLETE" as const;
+  }
+
+  return "PARTIALLY_COMPLETE" as const;
 }
 
 async function findExistingActiveWorkstationAssetByType(args: {
@@ -414,7 +572,13 @@ function assignmentPlacementChanged(
 function mapAssetRecord<T extends {
   currentLocation?: string | null;
   assetScope?: string | null;
+  registrationType?: string | null;
+  dataCompleteness?: string | null;
+  purchaseDate?: Date | null;
   warrantyExpiryDate?: Date | null;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
   relatedAssetId?: string | null;
   mobileNumber?: string | null;
   networkProvider?: string | null;
@@ -448,9 +612,19 @@ function mapAssetRecord<T extends {
   const activeAssignment = getActiveAssignment(asset.workstationAssignments);
   const currentLocationDisplay =
     displayLocationFromAssignment(activeAssignment) ?? asset.currentLocation ?? null;
+  const missingInformation = getMissingInformation(asset);
+  const profileCompletion = getProfileCompletion(asset);
 
   return {
     ...asset,
+    registrationType: normalizeRegistrationType(asset),
+    dataCompleteness:
+      (asset.dataCompleteness as AssetDataCompleteness | null | undefined) ??
+      determineDataCompleteness(asset),
+    brand: asset.brand ?? null,
+    model: asset.model ?? null,
+    serialNumber: asset.serialNumber ?? null,
+    purchaseDate: asset.purchaseDate?.toISOString() ?? null,
     warrantyExpiryDate: asset.warrantyExpiryDate?.toISOString() ?? null,
     relatedAssetId: asset.relatedAssetId ?? null,
     mobileNumber: asset.mobileNumber ?? null,
@@ -483,6 +657,8 @@ function mapAssetRecord<T extends {
     specificLocationNotes: activeAssignment?.specificLocationNotes ?? null,
     side: activeAssignment?.side ?? null,
     position: activeAssignment?.position ?? null,
+    profileCompletion,
+    missingInformation,
     workstationAssignments: asset.workstationAssignments.map((assignment) => ({
       ...assignment,
       assignedDate: assignment.assignedDate.toISOString(),
@@ -768,7 +944,21 @@ export async function getDashboardData() {
   const [workstations, assets, repairsInRepair, replacements, overdueRepairs, followUpAlerts, alerts, recentRepairs] =
     await Promise.all([
       prisma.workstation.count({ where: { deletedAt: null } }),
-      prisma.asset.count({ where: { deletedAt: null } }),
+      prisma.asset.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          registrationType: true,
+          dataCompleteness: true,
+          brand: true,
+          model: true,
+          serialNumber: true,
+          purchaseDate: true,
+          warrantyExpiryDate: true,
+          invoiceFileName: true,
+          invoiceFileUrl: true
+        }
+      }),
       prisma.repair.count({
         where: {
           deletedAt: null,
@@ -801,12 +991,39 @@ export async function getDashboardData() {
       })
     ]);
 
+  const totalAssets = assets.length;
+  const newAssets = assets.filter((asset) => asset.registrationType === "NEW_PURCHASE").length;
+  const legacyAssets = assets.filter((asset) => asset.registrationType === "LEGACY_ASSET").length;
+  const incompleteAssets = assets.filter((asset) =>
+    ["INCOMPLETE", "PARTIALLY_COMPLETE"].includes(asset.dataCompleteness)
+  ).length;
+  const needsVerificationAssets = assets.filter(
+    (asset) => asset.dataCompleteness === "NEEDS_VERIFICATION"
+  ).length;
+  const assetsMissingSerial = assets.filter((asset) => !hasValue(asset.serialNumber)).length;
+  const assetsMissingInvoice = assets.filter(
+    (asset) => !hasValue(asset.invoiceFileName) && !hasValue(asset.invoiceFileUrl)
+  ).length;
+  const averageProfileCompletion =
+    totalAssets > 0
+      ? Math.round(
+          assets.reduce((sum, asset) => sum + getProfileCompletion(asset), 0) / totalAssets
+        )
+      : 0;
+
   return {
     stats: {
       totalWorkstations: workstations,
-      totalAssets: assets,
+      totalAssets,
+      newAssets,
+      legacyAssets,
       machinesInRepair: repairsInRepair,
       activeTemporaryReplacements: replacements,
+      incompleteAssets,
+      needsVerificationAssets,
+      assetsMissingSerial,
+      assetsMissingInvoice,
+      averageProfileCompletion,
       overdueRepairs,
       followUpAlerts
     },
@@ -877,9 +1094,61 @@ export async function listAssets(filters: {
   type?: string;
   status?: string;
   location?: string;
+  registrationType?: string;
+  completeness?: string;
+  missingField?: string;
 }) {
   const workstationLocationFilter =
     filters.location && /^WS-\d{2}$/i.test(filters.location) ? filters.location : null;
+  const completenessFilter =
+    filters.completeness &&
+    COMPLETENESS_FILTER_OPTIONS.includes(
+      filters.completeness as (typeof COMPLETENESS_FILTER_OPTIONS)[number]
+    )
+      ? filters.completeness
+      : undefined;
+  const missingFieldFilter =
+    filters.missingField &&
+    MISSING_FIELD_FILTER_OPTIONS.includes(
+      filters.missingField as (typeof MISSING_FIELD_FILTER_OPTIONS)[number]
+    )
+      ? (filters.missingField as MissingFieldFilter)
+      : undefined;
+  const missingFieldCondition =
+    missingFieldFilter === "SERIAL_NUMBER"
+      ? { OR: [{ serialNumber: null }, { serialNumber: "" }] }
+      : missingFieldFilter === "BRAND"
+        ? { OR: [{ brand: null }, { brand: "" }] }
+        : missingFieldFilter === "MODEL"
+          ? { OR: [{ model: null }, { model: "" }] }
+          : missingFieldFilter === "PURCHASE_DATE"
+            ? { purchaseDate: null }
+            : missingFieldFilter === "WARRANTY"
+              ? { warrantyExpiryDate: null }
+              : missingFieldFilter === "INVOICE"
+                ? {
+                    AND: [
+                      { OR: [{ invoiceFileName: null }, { invoiceFileName: "" }] },
+                      { OR: [{ invoiceFileUrl: null }, { invoiceFileUrl: "" }] }
+                    ]
+                  }
+                : completenessFilter === "MISSING_INFORMATION"
+                  ? {
+                      OR: [
+                        { OR: [{ brand: null }, { brand: "" }] },
+                        { OR: [{ model: null }, { model: "" }] },
+                        { OR: [{ serialNumber: null }, { serialNumber: "" }] },
+                        { purchaseDate: null },
+                        { warrantyExpiryDate: null },
+                        {
+                          AND: [
+                            { OR: [{ invoiceFileName: null }, { invoiceFileName: "" }] },
+                            { OR: [{ invoiceFileUrl: null }, { invoiceFileUrl: "" }] }
+                          ]
+                        }
+                      ]
+                    }
+                  : undefined;
 
   const assets = await prisma.asset.findMany({
     where: {
@@ -894,6 +1163,16 @@ export async function listAssets(filters: {
             name: { equals: filters.type, mode: "insensitive" }
           }
         : undefined,
+      registrationType: filters.registrationType
+        ? {
+            equals: normalizeRegistrationType({ registrationType: filters.registrationType })
+          }
+        : undefined,
+      dataCompleteness:
+        completenessFilter && completenessFilter !== "MISSING_INFORMATION"
+          ? (completenessFilter as AssetDataCompleteness)
+          : undefined,
+      AND: missingFieldCondition ? [missingFieldCondition] : undefined,
       OR: filters.search
         ? [
             { assetCode: { contains: filters.search, mode: "insensitive" } },
@@ -1954,10 +2233,11 @@ export async function listAssetTypes() {
 export async function createAsset(input: {
   assetCode: string;
   assetTypeId: string;
+  registrationType?: AssetRegistrationType | null;
   relatedAssetId?: string | null;
-  brand: string;
-  model: string;
-  serialNumber: string;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
   mobileNumber?: string | null;
   networkProvider?: string | null;
   simType?: string | null;
@@ -1992,6 +2272,19 @@ export async function createAsset(input: {
   } | null;
   notes?: string | null;
 }) {
+  const registrationType = normalizeRegistrationType(input);
+  const brand = normalizeNullableString(input.brand);
+  const model = normalizeNullableString(input.model);
+  const serialNumber = normalizeNullableString(input.serialNumber);
+  const duplicateSerialWhere = serialNumber
+    ? prisma.asset.findFirst({
+        where: {
+          deletedAt: null,
+          serialNumber: { equals: serialNumber, mode: "insensitive" }
+        }
+      })
+    : Promise.resolve(null);
+
   const [existingByCode, existingBySerial] = await Promise.all([
     prisma.asset.findFirst({
       where: {
@@ -1999,12 +2292,7 @@ export async function createAsset(input: {
         assetCode: { equals: input.assetCode, mode: "insensitive" }
       }
     }),
-    prisma.asset.findFirst({
-      where: {
-        deletedAt: null,
-        serialNumber: { equals: input.serialNumber, mode: "insensitive" }
-      }
-    })
+    duplicateSerialWhere
   ]);
 
   if (existingByCode) {
@@ -2013,6 +2301,10 @@ export async function createAsset(input: {
 
   if (existingBySerial) {
     throw createError(409, "Serial number already exists.");
+  }
+
+  if (registrationType === "LEGACY_ASSET" && !brand && !model) {
+    throw createError(400, "Legacy assets require at least a brand or a model.");
   }
 
   const assetType = await prisma.assetType.findUnique({
@@ -2049,14 +2341,30 @@ export async function createAsset(input: {
     relatedAssetId: input.relatedAssetId
   });
 
+  const dataCompleteness = determineDataCompleteness({
+    registrationType,
+    assetCode: input.assetCode,
+    assetTypeId: input.assetTypeId,
+    status: input.status,
+    brand,
+    model,
+    serialNumber,
+    purchaseDate: input.purchaseDate ?? null,
+    warrantyExpiryDate: input.warrantyExpiryDate ?? null,
+    invoiceFileName: input.invoiceFileName ?? null,
+    invoiceFileUrl: input.invoiceFileUrl ?? null
+  });
+
   const asset = await prisma.asset.create({
     data: {
       assetCode: input.assetCode,
       assetTypeId: input.assetTypeId,
+      registrationType,
+      dataCompleteness,
       relatedAssetId: input.relatedAssetId ?? null,
-      brand: input.brand,
-      model: input.model,
-      serialNumber: input.serialNumber,
+      brand,
+      model,
+      serialNumber,
       mobileNumber: input.mobileNumber ?? null,
       networkProvider: input.networkProvider ?? null,
       simType: input.simType ?? null,
@@ -2126,10 +2434,11 @@ export async function createAsset(input: {
 export async function updateAsset(id: string, input: {
   assetCode: string;
   assetTypeId: string;
+  registrationType?: AssetRegistrationType | null;
   relatedAssetId?: string | null;
-  brand: string;
-  model: string;
-  serialNumber: string;
+  brand?: string | null;
+  model?: string | null;
+  serialNumber?: string | null;
   mobileNumber?: string | null;
   networkProvider?: string | null;
   simType?: string | null;
@@ -2164,6 +2473,10 @@ export async function updateAsset(id: string, input: {
   } | null;
   notes?: string | null;
 }) {
+  const registrationType = normalizeRegistrationType(input);
+  const brand = normalizeNullableString(input.brand);
+  const model = normalizeNullableString(input.model);
+  const serialNumber = normalizeNullableString(input.serialNumber);
   const existingAsset = await prisma.asset.findUnique({
     where: { id },
     include: {
@@ -2178,6 +2491,16 @@ export async function updateAsset(id: string, input: {
     throw createError(404, "Asset not found");
   }
 
+  const duplicateSerialWhere = serialNumber
+    ? prisma.asset.findFirst({
+        where: {
+          deletedAt: null,
+          id: { not: id },
+          serialNumber: { equals: serialNumber, mode: "insensitive" }
+        }
+      })
+    : Promise.resolve(null);
+
   const [existingByCode, existingBySerial] = await Promise.all([
     prisma.asset.findFirst({
       where: {
@@ -2186,13 +2509,7 @@ export async function updateAsset(id: string, input: {
         assetCode: { equals: input.assetCode, mode: "insensitive" }
       }
     }),
-    prisma.asset.findFirst({
-      where: {
-        deletedAt: null,
-        id: { not: id },
-        serialNumber: { equals: input.serialNumber, mode: "insensitive" }
-      }
-    })
+    duplicateSerialWhere
   ]);
 
   if (existingByCode) {
@@ -2201,6 +2518,10 @@ export async function updateAsset(id: string, input: {
 
   if (existingBySerial) {
     throw createError(409, "Serial number already exists.");
+  }
+
+  if (registrationType === "LEGACY_ASSET" && !brand && !model) {
+    throw createError(400, "Legacy assets require at least a brand or a model.");
   }
 
   const assetType = await prisma.assetType.findUnique({
@@ -2238,6 +2559,20 @@ export async function updateAsset(id: string, input: {
     relatedAssetId: input.relatedAssetId
   });
 
+  const dataCompleteness = determineDataCompleteness({
+    registrationType,
+    assetCode: input.assetCode,
+    assetTypeId: input.assetTypeId,
+    status: input.status,
+    brand,
+    model,
+    serialNumber,
+    purchaseDate: input.purchaseDate ?? null,
+    warrantyExpiryDate: input.warrantyExpiryDate ?? null,
+    invoiceFileName: input.invoiceFileName ?? null,
+    invoiceFileUrl: input.invoiceFileUrl ?? null
+  });
+
   const activeAssignment =
     existingAsset.workstationAssignments.find(
       (assignment: { status?: string | null; isActive?: boolean | null }) =>
@@ -2271,10 +2606,12 @@ export async function updateAsset(id: string, input: {
     data: {
       assetCode: input.assetCode,
       assetTypeId: input.assetTypeId,
+      registrationType,
+      dataCompleteness,
       relatedAssetId: input.relatedAssetId ?? null,
-      brand: input.brand,
-      model: input.model,
-      serialNumber: input.serialNumber,
+      brand,
+      model,
+      serialNumber,
       mobileNumber: input.mobileNumber ?? null,
       networkProvider: input.networkProvider ?? null,
       simType: input.simType ?? null,

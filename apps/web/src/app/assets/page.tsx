@@ -9,39 +9,10 @@ import { AssetArchiveButton } from "@/components/assets/asset-archive-button";
 import { AssetDeleteButton } from "@/components/assets/asset-delete-button";
 import { AssetsBulkDeleteButton } from "@/components/assets/assets-bulk-delete-button";
 import { ApiError, getAssets, getCurrentUser } from "@/lib/api";
+import { AssetRecord, inferAssetRegistrationType } from "@/lib/types";
 import { appendQueryParam } from "@/lib/query";
 
-type AssetPageRecord = {
-  id: string;
-  assetCode?: string;
-  brand?: string;
-  model?: string;
-  serialNumber?: string | null;
-  status?: string;
-  currentLocation?: string | null;
-  currentLocationDisplay?: string | null;
-  displayLocation?: string | null;
-  assetScope?: string | null;
-  generalLocation?: string | null;
-  specificLocationNotes?: string | null;
-  flow?: string | null;
-  side?: string | null;
-  workstationCode?: string | null;
-  assetType?: {
-    id?: string;
-    name?: string;
-  } | null;
-  workstation?: {
-    id?: string;
-    code?: string;
-  } | null;
-  workstationAssignments?: Array<{
-    workstation?: {
-      id?: string;
-      code?: string;
-    } | null;
-  }>;
-};
+type AssetPageRecord = AssetRecord;
 
 function normalizeAssets(input: any): AssetPageRecord[] {
   if (Array.isArray(input)) return input;
@@ -78,6 +49,31 @@ type AssetsResponse = {
   items: AssetPageRecord[];
   pagination: AssetPagination;
 };
+
+const REGISTRATION_TYPE_OPTIONS = [
+  { label: "All", value: "" },
+  { label: "New Purchase", value: "NEW_PURCHASE" },
+  { label: "Legacy Asset", value: "LEGACY_ASSET" }
+];
+
+const COMPLETENESS_OPTIONS = [
+  { label: "All", value: "" },
+  { label: "Complete", value: "COMPLETE" },
+  { label: "Partially Complete", value: "PARTIALLY_COMPLETE" },
+  { label: "Incomplete", value: "INCOMPLETE" },
+  { label: "Needs Verification", value: "NEEDS_VERIFICATION" },
+  { label: "Missing Information", value: "MISSING_INFORMATION" }
+];
+
+const MISSING_FIELD_OPTIONS = [
+  { label: "Any missing information", value: "" },
+  { label: "Missing Serial Number", value: "SERIAL_NUMBER" },
+  { label: "Missing Brand", value: "BRAND" },
+  { label: "Missing Model", value: "MODEL" },
+  { label: "Missing Purchase Date", value: "PURCHASE_DATE" },
+  { label: "Missing Warranty", value: "WARRANTY" },
+  { label: "Missing Invoice", value: "INVOICE" }
+];
 
 const QUICK_TYPE_BUTTONS = [
   { label: "All", value: "" },
@@ -290,6 +286,9 @@ export default async function AssetsPage({
   appendQueryParam(query, "type", params?.type);
   appendQueryParam(query, "status", params?.status);
   appendQueryParam(query, "location", params?.location);
+  appendQueryParam(query, "registrationType", params?.registrationType);
+  appendQueryParam(query, "completeness", params?.completeness);
+  appendQueryParam(query, "missingField", params?.missingField);
   appendQueryParam(query, "page", params?.page);
   appendQueryParam(query, "pageSize", params?.pageSize);
 
@@ -345,9 +344,15 @@ export default async function AssetsPage({
   const activeAssets = assets.filter((asset) => asset.status === "ACTIVE").length;
   const repairAssets = assets.filter((asset) => asset.status === "IN_REPAIR").length;
   const assignedAssets = assets.filter(
-    (asset) => asset.workstationAssignments?.[0]?.workstation?.code || asset.workstation?.code
+    (asset) => asset.workstationAssignments?.[0]?.workstation?.code || asset.workstationCode
   ).length;
   const selectedType = typeof params?.type === "string" ? params.type : "";
+  const selectedRegistrationType =
+    typeof params?.registrationType === "string" ? params.registrationType : "";
+  const selectedCompleteness =
+    typeof params?.completeness === "string" ? params.completeness : "";
+  const selectedMissingField =
+    typeof params?.missingField === "string" ? params.missingField : "";
   const currentPageSize =
     typeof params?.pageSize === "string" && ["25", "50", "100"].includes(params.pageSize)
       ? params.pageSize
@@ -357,6 +362,9 @@ export default async function AssetsPage({
     type = selectedType || undefined,
     status = typeof params?.status === "string" ? params.status : undefined,
     location = typeof params?.location === "string" ? params.location : undefined,
+    registrationType = selectedRegistrationType || undefined,
+    completeness = selectedCompleteness || undefined,
+    missingField = selectedMissingField || undefined,
     page = pagination.page,
     pageSize = currentPageSize
   }: {
@@ -364,6 +372,9 @@ export default async function AssetsPage({
     type?: string;
     status?: string;
     location?: string;
+    registrationType?: string;
+    completeness?: string;
+    missingField?: string;
     page?: number | string;
     pageSize?: string;
   }) => {
@@ -372,6 +383,9 @@ export default async function AssetsPage({
     appendQueryParam(nextQuery, "type", type);
     appendQueryParam(nextQuery, "status", status);
     appendQueryParam(nextQuery, "location", location);
+    appendQueryParam(nextQuery, "registrationType", registrationType);
+    appendQueryParam(nextQuery, "completeness", completeness);
+    appendQueryParam(nextQuery, "missingField", missingField);
     appendQueryParam(nextQuery, "page", String(page));
     appendQueryParam(nextQuery, "pageSize", pageSize);
     const serialized = nextQuery.toString();
@@ -382,6 +396,9 @@ export default async function AssetsPage({
       || typeof params?.type === "string" && params.type.trim()
       || typeof params?.status === "string" && params.status.trim()
       || typeof params?.location === "string" && params.location.trim()
+      || typeof params?.registrationType === "string" && params.registrationType.trim()
+      || typeof params?.completeness === "string" && params.completeness.trim()
+      || typeof params?.missingField === "string" && params.missingField.trim()
   );
 
   return (
@@ -438,7 +455,7 @@ export default async function AssetsPage({
             );
           })}
         </div>
-        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <form className="grid gap-4 md:grid-cols-2 xl:grid-cols-7">
           <input
             name="search"
             defaultValue={typeof params?.search === "string" ? params.search : ""}
@@ -484,6 +501,40 @@ export default async function AssetsPage({
               </optgroup>
             ))}
           </select>
+          <select
+            name="registrationType"
+            defaultValue={selectedRegistrationType}
+            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+          >
+            {REGISTRATION_TYPE_OPTIONS.map((option) => (
+              <option key={option.value || option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            name="completeness"
+            defaultValue={selectedCompleteness}
+            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3"
+          >
+            {COMPLETENESS_OPTIONS.map((option) => (
+              <option key={option.value || option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <select
+            name="missingField"
+            defaultValue={selectedMissingField}
+            disabled={selectedCompleteness !== "MISSING_INFORMATION"}
+            className="rounded-2xl border border-[var(--border)] bg-white px-4 py-3 disabled:bg-slate-100 disabled:text-slate-400"
+          >
+            {MISSING_FIELD_OPTIONS.map((option) => (
+              <option key={option.value || option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-3">
             <button className="flex-1 rounded-2xl bg-[var(--nav)] px-5 py-3 font-semibold text-white shadow-[0_14px_30px_rgba(24,49,83,0.18)] transition hover:bg-[#214067]">
               Filter
@@ -513,6 +564,9 @@ export default async function AssetsPage({
           <input type="hidden" name="type" value={typeof params?.type === "string" ? params.type : ""} />
           <input type="hidden" name="status" value={typeof params?.status === "string" ? params.status : ""} />
           <input type="hidden" name="location" value={typeof params?.location === "string" ? params.location : ""} />
+          <input type="hidden" name="registrationType" value={selectedRegistrationType} />
+          <input type="hidden" name="completeness" value={selectedCompleteness} />
+          <input type="hidden" name="missingField" value={selectedMissingField} />
           <input type="hidden" name="page" value="1" />
           <label className="text-sm font-medium text-[var(--muted)]" htmlFor="page-size">
             Page size
@@ -541,8 +595,10 @@ export default async function AssetsPage({
             headers={[
               "Asset Code",
               "Type",
+              "Registration",
               "Brand / Model",
               "Status",
+              "Completeness",
               "Location",
               "Actions"
             ]}
@@ -557,7 +613,6 @@ export default async function AssetsPage({
                     asset.generalLocation ??
                     asset.currentLocation ??
                     asset.workstationAssignments?.[0]?.workstation?.code ??
-                    asset.workstation?.code ??
                     "Store");
               const href = `/assets/${asset.id}`;
 
@@ -580,12 +635,24 @@ export default async function AssetsPage({
                       <span className="font-medium text-[var(--text)]">{asset.assetType?.name ?? "N/A"}</span>
                     </Link>
                   </td>
+                  <td className="px-4 py-4 text-sm">
+                    <Link href={href}>
+                      <StatusBadge value={inferAssetRegistrationType(asset)} tone="info" />
+                    </Link>
+                  </td>
                   <td className="px-4 py-4 text-sm text-[var(--text)]">
-                    <Link href={href}>{(asset.brand ?? "-") + " " + (asset.model ?? "")}</Link>
+                    <Link href={href}>
+                      {(asset.brand ?? "-") + ((asset.brand || asset.model) ? " " : "") + (asset.model ?? "")}
+                    </Link>
                   </td>
                   <td className="px-4 py-4 text-sm">
                     <Link href={href}>
                       <StatusBadge value={asset.status ?? "UNKNOWN"} />
+                    </Link>
+                  </td>
+                  <td className="px-4 py-4 text-sm">
+                    <Link href={href}>
+                      <StatusBadge value={asset.dataCompleteness ?? "COMPLETE"} />
                     </Link>
                   </td>
                   <td className="px-4 py-4 text-sm text-[var(--muted)]">

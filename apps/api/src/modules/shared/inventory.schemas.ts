@@ -9,6 +9,19 @@ const optionalTrimmedString = z.preprocess((value) => {
   return trimmed === "" ? undefined : trimmed;
 }, z.string().trim().optional());
 
+const nullableTrimmedString = z.preprocess((value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+}, z.string().trim().nullable().optional());
+
 function optionalEnumValue<T extends [string, ...string[]]>(values: T) {
   return z.preprocess((value) => {
     if (typeof value !== "string") {
@@ -37,6 +50,7 @@ export const assetStatusSchema = z.enum([
   "ARCHIVED"
 ]);
 
+export const assetRegistrationTypeSchema = z.enum(["NEW_PURCHASE", "LEGACY_ASSET"]);
 export const assetScopeSchema = z.enum(["WORKSTATION_DEVICE", "OTHER_NON_WORKSTATION_DEVICE"]);
 export const assignmentTypeSchema = z.enum(["PRIMARY", "TEMPORARY_REPLACEMENT", "SPARE"]);
 export const assignmentStatusSchema = z.enum(["ACTIVE", "INACTIVE"]);
@@ -69,6 +83,22 @@ export const assetQuerySchema = z.object({
   search: optionalTrimmedString,
   type: optionalTrimmedString,
   location: optionalTrimmedString,
+  registrationType: optionalEnumValue(["NEW_PURCHASE", "LEGACY_ASSET"]),
+  completeness: optionalEnumValue([
+    "COMPLETE",
+    "PARTIALLY_COMPLETE",
+    "INCOMPLETE",
+    "NEEDS_VERIFICATION",
+    "MISSING_INFORMATION"
+  ]),
+  missingField: optionalEnumValue([
+    "SERIAL_NUMBER",
+    "BRAND",
+    "MODEL",
+    "PURCHASE_DATE",
+    "WARRANTY",
+    "INVOICE"
+  ]),
   status: optionalEnumValue([
     "ACTIVE",
     "IN_STORE",
@@ -103,38 +133,94 @@ export const workstationPayloadSchema = z.object({
 export const assetPayloadSchema = z.object({
   assetCode: z.string().trim().min(3),
   assetTypeId: z.string().trim().min(1),
-  relatedAssetId: z.string().trim().optional().nullable(),
-  brand: z.string().trim().min(1),
-  model: z.string().trim().min(1),
-  serialNumber: z.string().trim().min(1),
-  mobileNumber: z.string().trim().optional().nullable(),
+  registrationType: assetRegistrationTypeSchema.default("NEW_PURCHASE"),
+  relatedAssetId: nullableTrimmedString,
+  brand: nullableTrimmedString,
+  model: nullableTrimmedString,
+  serialNumber: nullableTrimmedString,
+  mobileNumber: nullableTrimmedString,
   networkProvider: networkProviderSchema.nullable(),
   simType: simTypeSchema.nullable(),
   adapterType: adapterTypeSchema.nullable(),
-  otherAdapterType: z.string().trim().optional().nullable(),
-  specification: z.string().trim().optional().nullable(),
+  otherAdapterType: nullableTrimmedString,
+  specification: nullableTrimmedString,
   purchaseDate: z.string().datetime().optional().nullable(),
   warrantyExpiryDate: z.string().datetime().optional().nullable(),
   status: assetStatusSchema,
   assetScope: assetScopeSchema.optional().nullable(),
-  currentLocation: z.string().trim().optional().nullable(),
-  invoiceFileName: z.string().trim().optional().nullable(),
-  invoiceFileUrl: z.string().trim().optional().nullable(),
-  invoiceFileType: z.string().trim().optional().nullable(),
+  currentLocation: nullableTrimmedString,
+  invoiceFileName: nullableTrimmedString,
+  invoiceFileUrl: nullableTrimmedString,
+  invoiceFileType: nullableTrimmedString,
   invoiceFileSize: z.coerce.number().int().nonnegative().optional().nullable(),
   assignment: z
     .object({
-      workstationCode: z.string().trim().optional().nullable(),
-      generalLocation: z.string().trim().optional().nullable(),
-      specificLocationNotes: z.string().trim().optional().nullable(),
-      side: z.string().trim().optional().nullable(),
-      position: z.string().trim().optional().nullable(),
+      workstationCode: nullableTrimmedString,
+      generalLocation: nullableTrimmedString,
+      specificLocationNotes: nullableTrimmedString,
+      side: nullableTrimmedString,
+      position: nullableTrimmedString,
       status: assignmentStatusSchema.optional(),
       startDate: z.string().datetime().optional()
     })
     .optional()
     .nullable(),
-  notes: z.string().trim().optional().nullable()
+  notes: nullableTrimmedString
+}).superRefine((input, ctx) => {
+  if (input.registrationType === "NEW_PURCHASE") {
+    if (!input.brand) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["brand"],
+        message: "Brand is required for new purchases."
+      });
+    }
+
+    if (!input.model) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["model"],
+        message: "Model is required for new purchases."
+      });
+    }
+
+    if (!input.serialNumber) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["serialNumber"],
+        message: "Serial number is required for new purchases."
+      });
+    }
+
+    if (!input.purchaseDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["purchaseDate"],
+        message: "Purchase date is required for new purchases."
+      });
+    }
+
+    if (!input.warrantyExpiryDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["warrantyExpiryDate"],
+        message: "Warranty expiry date is required for new purchases."
+      });
+    }
+  }
+
+  if (input.registrationType === "LEGACY_ASSET" && !input.brand && !input.model) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["brand"],
+      message: "For legacy assets, enter at least a brand or a model."
+    });
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["model"],
+      message: "For legacy assets, enter at least a model or a brand."
+    });
+  }
 });
 
 export const workstationAssignmentPayloadSchema = z.object({

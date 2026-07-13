@@ -78,7 +78,7 @@ export function ReplacementForm({
   const isSaveDisabled =
     Boolean(isSaving) ||
     !values.originalAssetCode.trim() ||
-    !selectedOriginalAsset.serialNumber.trim() ||
+    !(selectedOriginalAsset.serialNumber ?? "").trim() ||
     !values.deviceType.trim() ||
     !values.replacementAssetCode.trim() ||
     !values.replacementDate.trim() ||
@@ -147,7 +147,7 @@ export function ReplacementForm({
         <label className="grid gap-2 text-sm">
           <span className="font-medium">Serial Number</span>
           <input
-            value={selectedOriginalAsset.serialNumber}
+            value={selectedOriginalAsset.serialNumber ?? ""}
             readOnly
             className="rounded-2xl border border-[var(--border)] bg-slate-50 px-4 py-3"
           />

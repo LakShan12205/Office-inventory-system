@@ -65,14 +65,7 @@ function toCreateAssetPayload(
   input: AssetInput,
   uploadedInvoice?: UploadedInvoiceMetadata
 ): CreateAssetPayload {
-  if (
-    !input.assetCode ||
-    !input.assetTypeId ||
-    !input.brand ||
-    !input.model ||
-    !input.serialNumber ||
-    !input.status
-  ) {
+  if (!input.assetCode || !input.assetTypeId || !input.status) {
     throw new Error("Missing required asset fields");
   }
 
@@ -81,6 +74,7 @@ function toCreateAssetPayload(
   return {
     assetCode: input.assetCode,
     assetTypeId: input.assetTypeId,
+    registrationType: input.registrationType,
     relatedAssetId: input.relatedAssetId,
     brand: input.brand,
     model: input.model,
@@ -114,6 +108,7 @@ function toUpdateAssetPayload(
   return {
     assetCode: input.assetCode,
     assetTypeId: input.assetTypeId,
+    registrationType: input.registrationType,
     relatedAssetId: input.relatedAssetId,
     brand: input.brand,
     model: input.model,
@@ -263,17 +258,9 @@ assetsRouter.get("/:id/invoice/view", async (req, res, next) => {
 assetsRouter.post("/", async (req, res, next) => {
   try {
     await runInvoiceUpload(req, res);
-    console.log("file:", req.file);
-    console.log("body:", req.body);
     const parsed = parseAssetRequestPayload(req);
     const uploadedInvoice = req.file ? await uploadInvoiceToSupabase(req.file) : undefined;
     const payload = toCreateAssetPayload(parsed, uploadedInvoice);
-    console.log("final asset create payload invoice fields:", {
-      invoiceFileName: payload.invoiceFileName,
-      invoiceFileUrl: payload.invoiceFileUrl,
-      invoiceFileType: payload.invoiceFileType,
-      invoiceFileSize: payload.invoiceFileSize
-    });
     const asset = await inventoryService.createAsset(payload);
     res.status(201).json(asset);
   } catch (error) {
@@ -284,17 +271,9 @@ assetsRouter.post("/", async (req, res, next) => {
 assetsRouter.put("/:id", async (req, res, next) => {
   try {
     await runInvoiceUpload(req, res);
-    console.log("file:", req.file);
-    console.log("body:", req.body);
     const parsed = parseAssetRequestPayload(req);
     const uploadedInvoice = req.file ? await uploadInvoiceToSupabase(req.file) : undefined;
     const payload = toUpdateAssetPayload(parsed, uploadedInvoice);
-    console.log("final asset create payload invoice fields:", {
-      invoiceFileName: payload.invoiceFileName,
-      invoiceFileUrl: payload.invoiceFileUrl,
-      invoiceFileType: payload.invoiceFileType,
-      invoiceFileSize: payload.invoiceFileSize
-    });
     const asset = await inventoryService.updateAsset(req.params.id, payload);
     res.json(asset);
   } catch (error) {
@@ -305,17 +284,9 @@ assetsRouter.put("/:id", async (req, res, next) => {
 assetsRouter.patch("/:id", async (req, res, next) => {
   try {
     await runInvoiceUpload(req, res);
-    console.log("file:", req.file);
-    console.log("body:", req.body);
     const parsed = parseAssetRequestPayload(req);
     const uploadedInvoice = req.file ? await uploadInvoiceToSupabase(req.file) : undefined;
     const payload = toUpdateAssetPayload(parsed, uploadedInvoice);
-    console.log("final asset create payload invoice fields:", {
-      invoiceFileName: payload.invoiceFileName,
-      invoiceFileUrl: payload.invoiceFileUrl,
-      invoiceFileType: payload.invoiceFileType,
-      invoiceFileSize: payload.invoiceFileSize
-    });
     const asset = await inventoryService.updateAsset(req.params.id, payload);
     res.json(asset);
   } catch (error) {

@@ -94,8 +94,15 @@ export default async function DashboardPage() {
     stats: {
       totalWorkstations: 0,
       totalAssets: 0,
+      newAssets: 0,
+      legacyAssets: 0,
       machinesInRepair: 0,
       activeTemporaryReplacements: 0,
+      incompleteAssets: 0,
+      needsVerificationAssets: 0,
+      assetsMissingSerial: 0,
+      assetsMissingInvoice: 0,
+      averageProfileCompletion: 0,
       returnedReplacements: 0,
       overdueRepairs: 0,
       followUpAlerts: 0
@@ -115,70 +122,124 @@ export default async function DashboardPage() {
   }
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-5">
       <h1 className="text-2xl font-semibold">Dashboard</h1>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Total Workstations"
           value={data.stats.totalWorkstations}
           icon={<MonitorIcon />}
+          compact
         />
         <StatCard
           label="Total Assets"
           value={data.stats.totalAssets}
           icon={<PackageIcon />}
           tone="amber"
+          compact
+        />
+        <StatCard
+          label="New Assets"
+          value={data.stats.newAssets}
+          icon={<PackageIcon />}
+          tone="navy"
+          compact
+        />
+        <StatCard
+          label="Legacy Assets"
+          value={data.stats.legacyAssets}
+          icon={<PackageIcon />}
+          tone="amber"
+          compact
         />
         <StatCard
           label="Machines in Repair"
           value={data.stats.machinesInRepair}
           icon={<WrenchIcon />}
           tone="rose"
+          compact
         />
         <StatCard
           label="Active Replacements"
           value={data.stats.activeTemporaryReplacements}
           icon={<RefreshCcwIcon />}
+          compact
+        />
+        <StatCard
+          label="Incomplete Assets"
+          value={data.stats.incompleteAssets}
+          icon={<PackageIcon />}
+          tone="rose"
+          compact
+        />
+        <StatCard
+          label="Needs Verification"
+          value={data.stats.needsVerificationAssets}
+          icon={<BellIcon />}
+          tone="amber"
+          compact
+        />
+        <StatCard
+          label="Missing Serial"
+          value={data.stats.assetsMissingSerial}
+          icon={<MonitorIcon />}
+          tone="rose"
+          compact
+        />
+        <StatCard
+          label="Missing Invoice"
+          value={data.stats.assetsMissingInvoice}
+          icon={<PackageIcon />}
+          tone="amber"
+          compact
+        />
+        <StatCard
+          label="Avg Completion"
+          value={`${data.stats.averageProfileCompletion}%`}
+          icon={<RefreshCcwIcon />}
+          tone="emerald"
+          compact
         />
         <StatCard
           label="Follow-up Alerts"
           value={data.stats.followUpAlerts}
           icon={<BellIcon />}
           tone="emerald"
+          compact
         />
       </div>
 
-      <section className="rounded-[1.9rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.95))] p-5 shadow-[0_20px_55px_rgba(24,49,83,0.08)]">
+      <section className="rounded-[1.5rem] border border-white/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(255,253,248,0.95))] p-4 shadow-[0_16px_45px_rgba(24,49,83,0.07)]">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
               Quick Actions
             </p>
-            <h2 className="mt-2 text-xl font-semibold text-[var(--nav)]">
+            <h2 className="mt-1.5 text-lg font-semibold text-[var(--nav)]">
               Jump into the most common dashboard tasks
             </h2>
           </div>
-          <p className="max-w-md text-sm leading-6 text-[var(--muted)]">
+          <p className="max-w-md text-sm leading-5 text-[var(--muted)]">
             Use these shortcuts to keep asset registration, repair tracking, replacements, and alerts moving quickly.
           </p>
         </div>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           {quickActions.map((action) => (
             <Link
               key={action.label}
               href={action.href}
-              className="group flex min-h-[148px] flex-col justify-between rounded-[1.5rem] border border-[var(--border)] bg-white/85 p-5 shadow-sm transition duration-300 hover:-translate-y-1 hover:border-[#d7c2a6] hover:shadow-[0_20px_50px_rgba(24,49,83,0.10)]"
+              className="group flex min-h-[116px] flex-col justify-between rounded-[1.15rem] border border-[var(--border)] bg-white/85 p-4 shadow-sm transition duration-300 hover:-translate-y-0.5 hover:border-[#d7c2a6] hover:shadow-[0_16px_40px_rgba(24,49,83,0.09)]"
             >
               <div>
                 <p className="text-base font-semibold text-[var(--nav)]">{action.label}</p>
-                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                <p className="mt-1.5 text-sm leading-5 text-[var(--muted)]">
                   {action.description}
                 </p>
               </div>
 
-              <span className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] transition group-hover:gap-3">
+              <span className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-[var(--accent)] transition group-hover:gap-3">
                 Open
                 <ArrowRightIcon />
               </span>
