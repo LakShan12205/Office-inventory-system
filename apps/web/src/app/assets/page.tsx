@@ -339,7 +339,7 @@ export default async function AssetsPage({
 
   const isAdmin =
     currentUserResult.status === "fulfilled" &&
-    currentUserResult.value.user.role === "ADMIN";
+    currentUserResult.value.user?.role === "ADMIN";
 
   const activeAssets = assets.filter((asset) => asset.status === "ACTIVE").length;
   const repairAssets = assets.filter((asset) => asset.status === "IN_REPAIR").length;

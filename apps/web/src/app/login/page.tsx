@@ -3,21 +3,32 @@ import { SystemLogo } from "@/components/branding/system-logo";
 import { LoginForm } from "@/components/auth/login-form";
 import { ApiError, getCurrentUser } from "@/lib/api";
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
+  let user = null;
+
   try {
-    const { user } = await getCurrentUser();
-
-    if (user.mustChangePassword) {
-      redirect("/change-password");
-    }
-
-    redirect("/dashboard");
+    const response = await getCurrentUser();
+    user = response.user;
   } catch (error) {
     if (!(error instanceof ApiError) || error.status !== 401) {
       console.error("Login auth check failed:", error);
     }
   }
 
+  if (user?.mustChangePassword === true) {
+    redirect("/change-password");
+  }
+
+  if (user?.mustChangePassword === false) {
+    redirect("/dashboard");
+  }
+
+  return renderLoginPage();
+}
+
+function renderLoginPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-[#eef6f1] via-white to-[#e6f4ec]">
       <div className="grid min-h-screen lg:grid-cols-[1.08fr_0.92fr]">

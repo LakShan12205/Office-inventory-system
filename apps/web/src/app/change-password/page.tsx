@@ -2,14 +2,24 @@ import { redirect } from "next/navigation";
 import { ChangePasswordForm } from "@/components/auth/change-password-form";
 import { getCurrentUser } from "@/lib/api";
 
+export const dynamic = "force-dynamic";
+
 export default async function ChangePasswordPage() {
+  let user = null;
+
   try {
-    const { user } = await getCurrentUser();
-    if (!user.mustChangePassword) {
-      redirect("/dashboard");
-    }
+    const response = await getCurrentUser();
+    user = response.user;
   } catch {
     redirect("/login");
+  }
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  if (!user.mustChangePassword) {
+    redirect("/dashboard");
   }
 
   return (

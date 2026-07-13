@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { CurrentUser } from "./types";
 
 export class ApiError extends Error {
   status?: number;
@@ -19,6 +20,12 @@ export class ApiError extends Error {
 const AUTH_TOKEN_STORAGE_KEY = "office_inventory_auth_token";
 const AUTH_LOGOUT_MARKER_KEY = "office_inventory_logged_out";
 const LEGACY_AUTH_COOKIE_NAMES = ["office_inventory_auth", "token", "auth_token"];
+type AuthEnvelope = {
+  user?: CurrentUser | null;
+  data?: {
+    user?: CurrentUser | null;
+  } | null;
+};
 
 function getReadableApiErrorMessage(status: number, data: any) {
   return (
@@ -147,6 +154,10 @@ function handleBrowserUnauthorized(path: string, method: string) {
 
   clearBrowserAuthSession(true);
   redirectToLogin();
+}
+
+function normalizeAuthUser(response: AuthEnvelope | null | undefined) {
+  return response?.user ?? response?.data?.user ?? null;
 }
 
 function getApiBaseUrl() {
@@ -361,7 +372,10 @@ export async function updateAlert(alertId: string, payload: { action: "read" | "
 export async function loginUser(payload: { username: string; password: string }) {
   const data = await request<{
     token?: string;
-    user: import("./types").CurrentUser;
+    user?: CurrentUser | null;
+    data?: {
+      user?: CurrentUser | null;
+    } | null;
   }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(payload)
@@ -373,7 +387,10 @@ export async function loginUser(payload: { username: string; password: string })
     clearBrowserAuthSession(false);
   }
 
-  return data;
+  return {
+    ...data,
+    user: normalizeAuthUser(data)
+  };
 }
 
 export async function logoutUser() {
@@ -397,7 +414,12 @@ export async function logoutUser() {
 }
 
 export async function getCurrentUser() {
-  return request<{ user: import("./types").CurrentUser }>("/auth/me");
+  const data = await request<AuthEnvelope>("/auth/me");
+
+  return {
+    ...data,
+    user: normalizeAuthUser(data)
+  };
 }
 
 export async function submitAccessRequest(payload: {
@@ -416,10 +438,15 @@ export async function changePassword(payload: {
   currentPassword: string;
   newPassword: string;
 }) {
-  return request<{ user: import("./types").CurrentUser }>("/auth/change-password", {
+  const data = await request<AuthEnvelope>("/auth/change-password", {
     method: "POST",
     body: JSON.stringify(payload)
   });
+
+  return {
+    ...data,
+    user: normalizeAuthUser(data)
+  };
 }
 
 export async function getAccessRequests() {

@@ -10,7 +10,7 @@ export default async function AdminAccessRequestsPage() {
 
   try {
     const res = await getCurrentUser();
-    user = res.user;
+    user = res.user ?? null;
   } catch (error) {
     // 🔥 If not authenticated → redirect to login
     redirect("/login");

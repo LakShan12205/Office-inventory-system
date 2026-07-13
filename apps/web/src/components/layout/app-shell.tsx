@@ -84,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       try {
         const { user } = await getCurrentUser();
 
-        if (isMounted) {
+        if (isMounted && user) {
           const adminUser = user.role === "ADMIN";
           setIsAdmin(adminUser);
 
@@ -99,6 +99,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           } else {
             setPendingAccessRequestCount(0);
           }
+        } else if (isMounted) {
+          setIsAdmin(false);
+          setPendingAccessRequestCount(0);
         }
       } catch (error) {
         if (isMounted) {
