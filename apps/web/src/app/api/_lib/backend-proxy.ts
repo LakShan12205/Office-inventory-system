@@ -1,7 +1,23 @@
 import { NextResponse } from "next/server";
 
+const AUTH_COOKIE_NAME = "office_inventory_auth";
+const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 12;
+
 function normalizeApiBase(url: string) {
   return url.endsWith("/api") ? url : `${url}/api`;
+}
+
+function extractAuthToken(responseBody: ArrayBuffer) {
+  try {
+    const text = new TextDecoder().decode(responseBody);
+    const data = text ? JSON.parse(text) : null;
+
+    return typeof data?.token === "string" && data.token.trim()
+      ? data.token
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function buildBackendUrl(path: string) {
@@ -120,6 +136,33 @@ export async function proxyToBackend(
   const setCookie = response.headers.get("set-cookie");
   if (setCookie) {
     nextResponse.headers.set("set-cookie", setCookie);
+  }
+
+  if (
+    response.ok &&
+    (path === "/auth/login" || path === "/auth/change-password")
+  ) {
+    const token = extractAuthToken(responseBody);
+
+    if (token) {
+      nextResponse.cookies.set(AUTH_COOKIE_NAME, token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        path: "/",
+        maxAge: AUTH_COOKIE_MAX_AGE_SECONDS
+      });
+    }
+  }
+
+  if (path === "/auth/logout") {
+    nextResponse.cookies.set(AUTH_COOKIE_NAME, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 0
+    });
   }
 
   const contentDisposition = response.headers.get("content-disposition");

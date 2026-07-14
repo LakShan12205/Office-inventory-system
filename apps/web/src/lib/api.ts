@@ -17,9 +17,8 @@ export class ApiError extends Error {
   }
 }
 
-const AUTH_TOKEN_STORAGE_KEY = "office_inventory_auth_token";
 const AUTH_LOGOUT_MARKER_KEY = "office_inventory_logged_out";
-const LEGACY_AUTH_COOKIE_NAMES = ["office_inventory_auth", "token", "auth_token"];
+const LEGACY_AUTH_COOKIE_NAMES = ["token", "auth_token"];
 type AuthEnvelope = {
   user?: CurrentUser | null;
   data?: {
@@ -77,24 +76,11 @@ function isPublicApiPath(path: string, method: string) {
   );
 }
 
-function getStoredAuthToken() {
-  if (!isBrowser()) {
-    return null;
-  }
-
-  return (
-    window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ??
-    window.sessionStorage.getItem(AUTH_TOKEN_STORAGE_KEY)
-  );
-}
-
-function setStoredAuthToken(token: string) {
+function clearLogoutMarker() {
   if (!isBrowser()) {
     return;
   }
 
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-  window.sessionStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
   window.localStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
   window.sessionStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
 }
@@ -114,15 +100,11 @@ export function clearBrowserAuthSession(markLoggedOut = true) {
     return;
   }
 
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-  window.sessionStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-
   if (markLoggedOut) {
     window.localStorage.setItem(AUTH_LOGOUT_MARKER_KEY, "1");
     window.sessionStorage.setItem(AUTH_LOGOUT_MARKER_KEY, "1");
   } else {
-    window.localStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
-    window.sessionStorage.removeItem(AUTH_LOGOUT_MARKER_KEY);
+    clearLogoutMarker();
   }
 
   expireLegacyAuthCookies();
@@ -185,12 +167,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (isBrowser()) {
-    const token = getStoredAuthToken();
-
-    if (token && !headers.has("Authorization")) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-
     if (hasClientLoggedOut() && !isPublicApiPath(path, method)) {
       redirectToLogin();
       throw new ApiError("Your session has ended. Please sign in again.", undefined, 401);
@@ -381,11 +357,7 @@ export async function loginUser(payload: { username: string; password: string })
     body: JSON.stringify(payload)
   });
 
-  if (data.token) {
-    setStoredAuthToken(data.token);
-  } else {
-    clearBrowserAuthSession(false);
-  }
+  clearLogoutMarker();
 
   return {
     ...data,
