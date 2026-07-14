@@ -1,9 +1,10 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { RepairReturnButton } from "@/components/repairs/repair-return-button";
 import { DataTable } from "@/components/ui/data-table";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { getRepairs } from "@/lib/api";
+import { ApiError, getRepairs } from "@/lib/api";
 import { appendQueryParam } from "@/lib/query";
 
 type RepairPageRecord = {
@@ -60,9 +61,20 @@ export default async function RepairsPage({
 
   appendQueryParam(query, "status", params?.status);
 
-  const repairs = (await getRepairs(
-    query.toString() ? `?${query.toString()}` : ""
-  )) as RepairPageRecord[];
+  let repairs: RepairPageRecord[] = [];
+
+  try {
+    repairs = (await getRepairs(
+      query.toString() ? `?${query.toString()}` : ""
+    )) as RepairPageRecord[];
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      redirect("/login");
+    }
+
+    console.error("Repairs error:", error);
+    return <div>Failed to load repairs</div>;
+  }
 
   const summaryCards = [
     {

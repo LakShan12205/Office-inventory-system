@@ -118,7 +118,12 @@ export default async function DashboardPage() {
       redirect("/login");
     }
 
-    console.log("Dashboard fetch failed, using fallback data");
+    console.error("Dashboard fetch failed:", error);
+    return (
+      <div className="rounded-[1.5rem] border border-red-100 bg-red-50 px-5 py-4 text-sm text-red-700">
+        Failed to load dashboard data. Please refresh the page or check the API deployment logs.
+      </div>
+    );
   }
 
   return (

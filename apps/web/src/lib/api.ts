@@ -142,9 +142,18 @@ function normalizeAuthUser(response: AuthEnvelope | null | undefined) {
   return response?.user ?? response?.data?.user ?? null;
 }
 
-function getApiBaseUrl() {
+async function getApiBaseUrl() {
   if (typeof window !== "undefined") {
     return "/api";
+  }
+
+  const { headers } = await import("next/headers");
+  const headersList = await headers();
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host");
+  const protocol = headersList.get("x-forwarded-proto") ?? "https";
+
+  if (host) {
+    return `${protocol}://${host}/api`;
   }
 
   const siteUrl =
@@ -155,7 +164,7 @@ function getApiBaseUrl() {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = getApiBaseUrl();
+  const baseUrl = await getApiBaseUrl();
   const url = `${baseUrl}${path}`;
   const headers = new Headers(init?.headers ?? {});
   const method = getRequestMethod(init);

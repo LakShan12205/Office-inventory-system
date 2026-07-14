@@ -1,7 +1,8 @@
+import { redirect } from "next/navigation";
 import { ReplacementRecordsList } from "@/components/replacements/replacement-records-list";
 import { ReplacementsWorkspace } from "@/components/replacements/replacements-workspace";
 import { PageHeader } from "@/components/ui/page-header";
-import { getAssets, getBackendReplacements } from "@/lib/api";
+import { ApiError, getAssets, getBackendReplacements } from "@/lib/api";
 import { AssetRecord, ReplacementRecord } from "@/lib/types";
 
 function normalizeAssets(input: unknown): AssetRecord[] {
@@ -29,7 +30,18 @@ export default async function ReplacementsPage({
     typeof params?.q === "string" && params.q.trim() ? params.q : undefined;
 
   if (statusFilter) {
-    const replacements = await getBackendReplacements();
+    let replacements: unknown;
+
+    try {
+      replacements = await getBackendReplacements();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        redirect("/login");
+      }
+
+      console.error("Replacements error:", error);
+      return <div>Failed to load replacements</div>;
+    }
 
     return (
       <div className="space-y-5">
@@ -46,10 +58,22 @@ export default async function ReplacementsPage({
     );
   }
 
-  const [assets, replacements] = await Promise.all([
-    getAssets("?pageSize=500"),
-    getBackendReplacements()
-  ]);
+  let assets: unknown;
+  let replacements: unknown;
+
+  try {
+    [assets, replacements] = await Promise.all([
+      getAssets("?pageSize=500"),
+      getBackendReplacements()
+    ]);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) {
+      redirect("/login");
+    }
+
+    console.error("Replacement workspace error:", error);
+    return <div>Failed to load replacement data</div>;
+  }
 
   return (
     <div className="space-y-5">
