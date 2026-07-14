@@ -17,7 +17,14 @@ export function errorHandler(error: any, _req: Request, res: Response, _next: Ne
   }
 
   const status = error.status || 500;
-  const message = error.message || "Internal server error";
+  const message =
+    status >= 500
+      ? "Unable to sign in. Please verify your credentials or try again."
+      : error.message || "Internal server error";
+
+  if (status >= 500) {
+    console.error("Unhandled API error:", error);
+  }
 
   res.status(status).json({
     error: {
